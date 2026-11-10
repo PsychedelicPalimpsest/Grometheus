@@ -1,0 +1,4 @@
+800x600 XRGB8888 timing copy n=200 median_us=100.1 p95_us=104.5 max_us=126.4
+800x600 ARGB8888 timing copy n=200 median_us=203.4 p95_us=307.7 max_us=429.1
+1920x1080 XRGB8888 timing copy n=200 median_us=331.6 p95_us=406.0 max_us=477.1
+1920x1080 ARGB8888 timing copy n=200 median_us=922.4 p95_us=991.5 max_us=1047.2

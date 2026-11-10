@@ -1,0 +1,25 @@
+# Generated builds and local tooling.
+/build*/
+/cmake-build*/
+/build*.log
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/CTestTestfile.cmake
+/Testing/
+/.venv/
+/venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Emulator output generated per run. Keep only screenshots linked in verification.md.
+/docs/*.log
+/docs/*.json
+/docs/*.png
+!/docs/drm.png
+!/docs/fbdev.png
+!/docs/lvgl-drm.png
+!/docs/lvgl-fbdev.png
+!/docs/auto-fallback.png
+/docs/*.ppm
