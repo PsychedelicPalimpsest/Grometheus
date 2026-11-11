@@ -22,6 +22,8 @@ state. The test screen does not accept input.
   evidence of a working combined boot path.
 
 The current emulator display result is [shown here](docs/preboot-lvgl.png).
+See [backend calls from the preboot UI](docs/backend-ui-flows.md) for the
+password, charging, selection and provisioning call paths.
 
 ## Build or patch an image
 

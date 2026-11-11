@@ -101,6 +101,7 @@ other operations unavailable. They do not authenticate, provision, charge or
 boot anything. The combined renderer still has no input device hookup or
 production handoff, and its emulator display is not the 480-by-900 portrait
 viewport used to design the interactive UI.
+See [the backend call map](../docs/backend-ui-flows.md) for each flow.
 
 Build the native runner with `cmake -S design -B build-design -G Ninja`, then
 `cmake --build build-design` and run `build-design/grom-design`. SDL2 development
