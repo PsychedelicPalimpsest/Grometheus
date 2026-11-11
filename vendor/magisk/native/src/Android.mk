@@ -91,7 +91,7 @@ LOCAL_MODULE := libgrom
 LOCAL_SRC_FILES := \
     $(GROM_PROJECT_ROOT)/grom/src/preboot.c \
     $(GROM_PROJECT_ROOT)/grom/src/test_ui.c \
-    $(GROM_PROJECT_ROOT)/grom/src/ui_stub.c \
+    $(GROM_PROJECT_ROOT)/grom/src/backend_stub.c \
     $(GROM_PROJECT_ROOT)/grom/ui/outline.c \
     $(GROM_PROJECT_ROOT)/grom/ui/ghost.c
 LOCAL_C_INCLUDES := \

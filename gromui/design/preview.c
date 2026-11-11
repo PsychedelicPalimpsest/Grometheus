@@ -1,6 +1,5 @@
 /* Native host entry point. The UI itself lives in grom/ui/outline.c. */
 #include "grom_ui_frontend.h"
-#include "grom_ui_stub.h"
 #include "lvgl.h"
 #include <SDL.h>
 
@@ -15,11 +14,9 @@ int main(void) {
     lv_sdl_window_set_title(display, "grom");
     lv_sdl_mouse_create();
 
-    grom_ui_stub stub;
-    grom_ui_stub_init(&stub);
-    grom_ui_frontend *frontend = grom_outline_frontend.create(
-        display, grom_ui_stub_backend(&stub));
-    if(!frontend) {
+    grom_ui_frontend *frontend = grom_ui_create(display);
+    if(!frontend || grom_ui_show_password(frontend) != 0) {
+        if(frontend) grom_ui_destroy(frontend);
         lv_display_delete(display);
         lv_deinit();
         return 1;

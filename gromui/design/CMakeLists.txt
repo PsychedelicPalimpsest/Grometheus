@@ -33,6 +33,12 @@ target_include_directories(grom-outline PUBLIC
 target_link_libraries(grom-outline PUBLIC lvgl-preview)
 target_compile_options(grom-outline PRIVATE -Wall -Wextra -Werror)
 
-add_executable(grom-design preview.c ${GROM_ROOT}/grom/src/ui_stub.c)
+add_executable(grom-design preview.c ${GROM_ROOT}/grom/src/backend_stub.c)
 target_link_libraries(grom-design PRIVATE grom-outline)
 target_compile_options(grom-design PRIVATE -Wall -Wextra -Werror)
+
+enable_testing()
+add_executable(grom-interaction-test interaction_test.c)
+target_link_libraries(grom-interaction-test PRIVATE grom-outline)
+target_compile_options(grom-interaction-test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME grom-interaction COMMAND grom-interaction-test)

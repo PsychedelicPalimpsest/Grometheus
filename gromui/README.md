@@ -88,21 +88,26 @@ The LVGL screen's button is a rendering sample, not an implemented action.
 The combined MagiskInit binary uses the same display backend and LVGL adapter
 for the outline preboot UI. grom supervises that renderer in a child and keeps
 its device mounts private. The UI is implemented in `grom/ui/outline.c` and
-depends on the LVGL-free `grom/include/grom_ui_contract.h`. A future UI can
-implement `grom_ui_frontend_ops` without changing the grom backend. The contract
-provides screen state and only labels permitted for display, and accepts
-unlock, destination selection, provisioning, reboot, and shutdown requests.
-Credential buffers are held outside LVGL text areas and erased after a backend
-call. The native SDL runner in `design/preview.c` uses an inert stub that
-always rejects unlock; it does not authenticate, provision, or boot anything.
-The combined preboot test renderer also uses that stub. It still has no input
-device hookup or production handoff, and its emulator display is not the
-480-by-900 portrait viewport used to design the interactive UI.
+depends on the LVGL-free `grom/include/grom_backend.h`. That header describes
+backend operations for authentication, matching-destination selection,
+provisioning sessions, charge status and power. It defines no screens. The
+frontend has only password and charging entry calls; later screens are its own
+presentation state. Output labels are limited to authenticated matches or the
+current provisioning session. Credential buffers are held outside LVGL text
+areas and erased after a backend call. Calls are synchronous and direct; this
+refactor adds no IPC. The native SDL runner in `design/preview.c` and combined
+preboot test renderer use an inert backend stub that rejects unlock and reports
+other operations unavailable. They do not authenticate, provision, charge or
+boot anything. The combined renderer still has no input device hookup or
+production handoff, and its emulator display is not the 480-by-900 portrait
+viewport used to design the interactive UI.
 
 Build the native runner with `cmake -S design -B build-design -G Ninja`, then
 `cmake --build build-design` and run `build-design/grom-design`. SDL2 development
-files are required. This runner is a test host for the frontend, not grom
-logic.
+files are required. Run `ctest --test-dir build-design --output-on-failure`
+for the frontend interaction test. Its deterministic backend functions exist
+only in that test executable. The runner is a test host for the frontend, not
+grom logic.
 
 Keep exclusive ownership of the display while open. On close, gromui restores
 the previous DRM CRTC routing/mode or saved visible fbdev pixels and frees its

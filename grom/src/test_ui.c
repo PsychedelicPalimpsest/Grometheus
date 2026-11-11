@@ -21,7 +21,6 @@
 
 #include "gromui_lvgl.h"
 #include "grom_ui_frontend.h"
-#include "grom_ui_stub.h"
 
 static int mounted_devtmpfs;
 
@@ -182,11 +181,9 @@ int grom_test_ui_run(int ready_fd) {
         gromui_close(backend);
         return 1;
     }
-    grom_ui_stub stub;
-    grom_ui_stub_init(&stub);
-    grom_ui_frontend *frontend = grom_outline_frontend.create(
-        display, grom_ui_stub_backend(&stub));
-    if (!frontend) {
+    grom_ui_frontend *frontend = grom_ui_create(display);
+    if (!frontend || grom_ui_show_password(frontend) != 0) {
+        if (frontend) grom_ui_destroy(frontend);
         lv_display_delete(display);
         lv_deinit();
         gromui_close(backend);
@@ -194,7 +191,7 @@ int grom_test_ui_run(int ready_fd) {
     }
     lv_refr_now(display);
     if (gromui_lvgl_error(display) || gromui_lvgl_presents(display) == 0) {
-        grom_outline_frontend.destroy(frontend);
+        grom_ui_destroy(frontend);
         lv_display_delete(display);
         lv_deinit();
         gromui_close(backend);
@@ -211,7 +208,7 @@ int grom_test_ui_run(int ready_fd) {
         const struct timespec delay = {.tv_sec = 0, .tv_nsec = 50000000};
         nanosleep(&delay, NULL);
     }
-    grom_outline_frontend.destroy(frontend);
+    grom_ui_destroy(frontend);
     lv_display_delete(display);
     lv_deinit();
     gromui_close(backend);
