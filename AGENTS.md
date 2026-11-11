@@ -10,6 +10,8 @@ the presence of grom itself.
 The repository contains `gromui`: a C11 display library, an LVGL adapter, and
 an emulator init harness, plus a pinned Magisk v30.4 source fork and a grom
 preboot hook compiled into `magiskinit`. The harness is not production init.
+`grombake.py` automates the static combined build, image copy patching, and
+verification. It does not flash devices. Patched images still stop in preboot.
 The combined binary is an integration scaffold that starts a supervised LVGL
 display test and waits in preboot; it does not boot Android yet. The displayed
 password field accepts no input. Credential input, charger policy, encryption,
@@ -119,24 +121,32 @@ During creation, the user temporarily supplies credentials for existing slots:
 
 1. Use each supplied credential to authenticate matching slot metadata and
    retrieve its occupied extents.
-2. Add those extents to an anonymous union of occupied ranges. Do not retain
-   names, grouping by slot, credentials, keys, or full decrypted payloads.
+2. Add those extents to an anonymous union of occupied ranges. Separately retain
+   display labels for slots authenticated by credentials supplied in this
+   provisioning session, and show them in an on-screen preservation list.
+   Labels may remain in RAM for this session; do not retain their association
+   with extent groups, credentials, keys, or full decrypted payloads. Never
+   enumerate unmatched slots.
 3. Erase the credential, derived keys, decrypted payloads, and temporary copies
-   before displaying the next credential prompt.
-4. Allocate around the accumulated ranges and explicitly supplied reservations.
+   before displaying the next credential prompt, except for the explicitly
+   retained display labels and accumulated occupied-range union.
+4. Allocate around the accumulated ranges. The creation UI has no manual
+   range-reservation screen.
    Require acknowledgement that omitted slots may be overwritten. Remaining
    space is not verified free space.
-5. Erase accumulated state when provisioning finishes. The completion flow
-   offers reboot only, with no direct boot into an OS.
+5. Erase accumulated ranges and retained labels when provisioning finishes or
+   is cancelled. The completion flow offers reboot only, with no direct boot
+   into an OS.
 
-The accumulated occupied-range union exists only in RAM and must never be
-written to disk. The new slot's own allocation metadata belongs inside its
-encrypted metadata; it must not contain an inventory of other slots.
+The accumulated occupied-range union and preservation-label list exist only in
+RAM and must never be written to disk. The new slot's own allocation metadata
+belongs inside its encrypted metadata; it must not contain an inventory of
+other slots.
 
 Provisioning is an explicit exception to the ordinary-boot RAM guarantee: a RAM
-dump during it can reveal accumulated protected ranges and secrets currently
-being processed. Immediate secret erasure limits exposure; it cannot undo a
-dump already taken.
+dump during it can reveal accumulated protected ranges, retained display labels,
+and secrets currently being processed. Immediate secret erasure limits exposure;
+it cannot undo a dump already taken.
 
 ## Storage and cryptography constraints
 

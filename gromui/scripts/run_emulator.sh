@@ -9,6 +9,7 @@ Usage: scripts/run_emulator.sh [AVD] [--headless] [--virtio-gpu MODULE] [-- EMUL
 Boots an existing x86_64 gromui-init binary as /init in a temporary copy of
 an SDK AVD ramdisk. Defaults to test_device and build/gromui-init.
 GROMUI_BINARY selects a different static x86_64 executable.
+GROMUI_RAMDISK_IMAGE selects a ramdisk already patched by grombake.py.
 GROMUI_BACKEND selects auto (default), drm, fbdev, or test-only auto-fbdev.
 GROMUI_KERNEL + GROMUI_MODULES select a test kernel and matching uncompressed modules.
 The stock Android 13 SDK kernel has no CONFIG_FB; fbdev needs a test kernel.
@@ -143,9 +144,13 @@ if [[ -z $virtio_gpu ]]; then
 fi
 
 binary=${GROMUI_BINARY:-$root/build/gromui-init}
-install -m 755 "$binary" "$workdir/gromui-init"
-echo "Patching a copy of the stock ramdisk..."
-lz4 -d -q "$stock_ramdisk" "$workdir/stock.cpio"
+source_ramdisk=${GROMUI_RAMDISK_IMAGE:-$stock_ramdisk}
+[[ -f $source_ramdisk ]] || {
+    echo "Ramdisk not found: $source_ramdisk" >&2
+    exit 1
+}
+echo "Staging a copy of the ramdisk: $source_ramdisk"
+lz4 -d -q "$source_ramdisk" "$workdir/stock.cpio"
 python3 "$root/scripts/ramdisk_tools.py" split \
     "$workdir/stock.cpio" "$workdir/first.cpio" "$workdir/remainder.cpio"
 (
@@ -153,11 +158,24 @@ python3 "$root/scripts/ramdisk_tools.py" split \
     cpio -id --quiet --no-absolute-filenames <"$workdir/first.cpio"
 )
 [[ -f $stage/init && ! -L $stage/init ]] || {
-    echo "Stock ramdisk has no regular /init" >&2
+    echo "Ramdisk has no regular /init" >&2
     exit 1
 }
-mv "$stage/init" "$stage/init.orig"
-install -m 755 "$workdir/gromui-init" "$stage/init"
+if [[ -n ${GROMUI_RAMDISK_IMAGE:-} ]]; then
+    [[ -f $stage/init.orig && ! -L $stage/init.orig ]] || {
+        echo "Patched ramdisk has no regular /init.orig" >&2
+        exit 1
+    }
+    if [[ -n ${GROMUI_BINARY:-} ]]; then
+        cmp "$binary" "$stage/init" || {
+            echo "Patched ramdisk /init differs from GROMUI_BINARY" >&2
+            exit 1
+        }
+    fi
+else
+    mv "$stage/init" "$stage/init.orig"
+    install -m 755 "$binary" "$stage/init"
+fi
 printf "%s\n" "$backend" >"$stage/gromui-backend"
 mkdir -p "$stage/lib/modules"
 install -m 644 "$virtio_gpu" "$stage/lib/modules/virtio-gpu.ko"

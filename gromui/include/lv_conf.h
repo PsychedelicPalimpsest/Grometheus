@@ -13,6 +13,7 @@
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
 
 /* The recovery demo uses these embedded fonts. */
+#define LV_FONT_MONTSERRAT_18 1
 #define LV_FONT_MONTSERRAT_24 1
 #define LV_FONT_MONTSERRAT_32 1
 
@@ -24,7 +25,7 @@
 #define LV_USE_ANIMIMG 0
 #define LV_USE_ARC 0
 #define LV_USE_ARCLABEL 0
-#define LV_USE_BUTTONMATRIX 0
+#define LV_USE_BUTTONMATRIX 1
 #define LV_USE_CALENDAR 0
 #define LV_USE_CALENDAR_HEADER_ARROW 0
 #define LV_USE_CALENDAR_HEADER_DROPDOWN 0
@@ -32,9 +33,9 @@
 #define LV_USE_CHART 0
 #define LV_USE_CHECKBOX 0
 #define LV_USE_DROPDOWN 0
-#define LV_USE_IMAGE 0
+#define LV_USE_IMAGE 1
 #define LV_USE_IMAGEBUTTON 0
-#define LV_USE_KEYBOARD 0
+#define LV_USE_KEYBOARD 1
 #define LV_USE_LED 0
 #define LV_USE_LINE 0
 #define LV_USE_LIST 0
@@ -49,7 +50,7 @@
 #define LV_USE_SWITCH 0
 #define LV_USE_TABLE 0
 #define LV_USE_TABVIEW 0
-#define LV_USE_TEXTAREA 0
+#define LV_USE_TEXTAREA 1
 #define LV_USE_TILEVIEW 0
 #define LV_USE_WIN 0
 

@@ -90,9 +90,13 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := libgrom
 LOCAL_SRC_FILES := \
     $(GROM_PROJECT_ROOT)/grom/src/preboot.c \
-    $(GROM_PROJECT_ROOT)/grom/src/test_ui.c
+    $(GROM_PROJECT_ROOT)/grom/src/test_ui.c \
+    $(GROM_PROJECT_ROOT)/grom/src/ui_stub.c \
+    $(GROM_PROJECT_ROOT)/grom/ui/outline.c \
+    $(GROM_PROJECT_ROOT)/grom/ui/ghost.c
 LOCAL_C_INCLUDES := \
     $(GROM_PROJECT_ROOT)/grom/include \
+    $(GROM_PROJECT_ROOT)/grom/ui \
     $(GROM_PROJECT_ROOT)/gromui/include \
     $(GROM_LVGL_DIR)
 LOCAL_CFLAGS := -std=c11 -D_GNU_SOURCE -DLV_CONF_INCLUDE_SIMPLE

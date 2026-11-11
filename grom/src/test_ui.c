@@ -20,6 +20,8 @@
 #include <unistd.h>
 
 #include "gromui_lvgl.h"
+#include "grom_ui_frontend.h"
+#include "grom_ui_stub.h"
 
 static int mounted_devtmpfs;
 
@@ -151,50 +153,6 @@ static uint32_t tick_ms(void) {
     return (uint32_t)((uint64_t)now.tv_sec * 1000 + (uint64_t)now.tv_nsec / 1000000);
 }
 
-static lv_obj_t *label(lv_obj_t *parent, const char *value, int x, int y,
-                       const lv_font_t *font, uint32_t color) {
-    lv_obj_t *object = lv_label_create(parent);
-    lv_label_set_text(object, value);
-    lv_obj_set_pos(object, x, y);
-    lv_obj_set_style_text_font(object, font, 0);
-    lv_obj_set_style_text_color(object, lv_color_hex(color), 0);
-    return object;
-}
-
-static void draw_test_screen(lv_display_t *display) {
-    lv_obj_t *screen = lv_display_get_screen_active(display);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x101820), 0);
-    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
-
-    lv_obj_t *accent = lv_obj_create(screen);
-    lv_obj_remove_style_all(accent);
-    lv_obj_set_size(accent, lv_pct(100), 10);
-    lv_obj_set_style_bg_opa(accent, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(accent, lv_color_hex(0x69dfb0), 0);
-
-    label(screen, "GROM", 64, 62, &lv_font_montserrat_32, 0xf5f7f8);
-    lv_obj_t *card = lv_obj_create(screen);
-    lv_obj_set_pos(card, 64, 165);
-    lv_obj_set_size(card, lv_pct(84), 325);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x202d38), 0);
-    lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_radius(card, 0, 0);
-    lv_obj_set_style_pad_all(card, 0, 0);
-    label(card, "PASSWORD", 30, 35, &lv_font_montserrat_32, 0xf5f7f8);
-
-    lv_obj_t *field = lv_obj_create(card);
-    lv_obj_remove_style_all(field);
-    lv_obj_set_pos(field, 30, 105);
-    lv_obj_set_size(field, lv_pct(90), 3);
-    lv_obj_set_style_bg_opa(field, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(field, lv_color_hex(0x69dfb0), 0);
-
-    label(card, "PREBOOT DISPLAY TEST", 30, 150, &lv_font_montserrat_24,
-          0xa7b8c8);
-    label(card, "INPUT NOT ACTIVE", 30, 205, &lv_font_montserrat_24,
-          0xa7b8c8);
-}
-
 int grom_test_ui_run(int ready_fd) {
     if (prepare_devices() < 0) {
         return 1;
@@ -224,9 +182,19 @@ int grom_test_ui_run(int ready_fd) {
         gromui_close(backend);
         return 1;
     }
-    draw_test_screen(display);
+    grom_ui_stub stub;
+    grom_ui_stub_init(&stub);
+    grom_ui_frontend *frontend = grom_outline_frontend.create(
+        display, grom_ui_stub_backend(&stub));
+    if (!frontend) {
+        lv_display_delete(display);
+        lv_deinit();
+        gromui_close(backend);
+        return 1;
+    }
     lv_refr_now(display);
     if (gromui_lvgl_error(display) || gromui_lvgl_presents(display) == 0) {
+        grom_outline_frontend.destroy(frontend);
         lv_display_delete(display);
         lv_deinit();
         gromui_close(backend);
@@ -243,6 +211,7 @@ int grom_test_ui_run(int ready_fd) {
         const struct timespec delay = {.tv_sec = 0, .tv_nsec = 50000000};
         nanosleep(&delay, NULL);
     }
+    grom_outline_frontend.destroy(frontend);
     lv_display_delete(display);
     lv_deinit();
     gromui_close(backend);

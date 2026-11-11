@@ -86,9 +86,23 @@ has no storage actions, input, chainloading or production shutdown policy.
 The LVGL screen's button is a rendering sample, not an implemented action.
 
 The combined MagiskInit binary uses the same display backend and LVGL adapter
-for a separate grom preboot test screen. grom supervises that renderer in a
-child and keeps its device mounts private. The displayed password field is a
-visual placeholder; no input or unlock action is implemented.
+for the outline preboot UI. grom supervises that renderer in a child and keeps
+its device mounts private. The UI is implemented in `grom/ui/outline.c` and
+depends on the LVGL-free `grom/include/grom_ui_contract.h`. A future UI can
+implement `grom_ui_frontend_ops` without changing the grom backend. The contract
+provides screen state and only labels permitted for display, and accepts
+unlock, destination selection, provisioning, reboot, and shutdown requests.
+Credential buffers are held outside LVGL text areas and erased after a backend
+call. The native SDL runner in `design/preview.c` uses an inert stub that
+always rejects unlock; it does not authenticate, provision, or boot anything.
+The combined preboot test renderer also uses that stub. It still has no input
+device hookup or production handoff, and its emulator display is not the
+480-by-900 portrait viewport used to design the interactive UI.
+
+Build the native runner with `cmake -S design -B build-design -G Ninja`, then
+`cmake --build build-design` and run `build-design/grom-design`. SDL2 development
+files are required. This runner is a test host for the frontend, not grom
+logic.
 
 Keep exclusive ownership of the display while open. On close, gromui restores
 the previous DRM CRTC routing/mode or saved visible fbdev pixels and frees its
@@ -117,6 +131,11 @@ scripts/run_emulator.sh test_device --headless -- -grpc 8556
 # In another terminal, before terminating that owned emulator:
 build/capture-env/bin/python scripts/capture.py docs/screenshot.png
 ```
+
+For the combined grom build, set `GROMUI_RAMDISK_IMAGE` to a standalone
+ramdisk patched by root `grombake.py` and `GROMUI_BINARY` to its x86_64 init.
+The runner preserves that image's `/init` and `/init.orig` while staging the
+emulator's GPU module in a separate temporary copy.
 
 Use the SDK gRPC screenshot endpoint. QEMU monitor `screendump` captures a
 separate black surface with this emulator's gfxstream integration. ADB and
