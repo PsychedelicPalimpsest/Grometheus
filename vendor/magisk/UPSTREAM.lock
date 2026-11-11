@@ -1,0 +1,10 @@
+source=https://github.com/topjohnwu/Magisk.git
+tag=v30.4
+commit=c3db2e368d47731e625dd0ed499f66bb57ed325b
+native/src/external/crt0=9dfa67b4d543f1b6bf2e936f560fbe77ca2a226a
+native/src/external/cxx-rs=667377297a1cc0e1ab3dfc82fa56da83e59d0378
+native/src/external/libcxx=d5117df3ba7704aab06c3a30b97c7529c931662b
+native/src/external/lsplt=cef80a97a73184b4def9b3e1148884365fc173fd
+native/src/external/lz4=d44371841a2f1728a3f36839fd4b7e872d0927d3
+native/src/external/selinux=3007b80e911ca5feebfe30fec067f2f9cc0ee22e
+native/src/external/system_properties=f081b497cddba591e65c96eedac29db9a0082131

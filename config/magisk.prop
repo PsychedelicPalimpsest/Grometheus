@@ -1,0 +1,3 @@
+version=30.4-grom
+versionCode=30400
+abiList=x86_64,arm64-v8a
