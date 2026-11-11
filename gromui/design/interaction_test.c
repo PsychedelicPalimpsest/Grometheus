@@ -102,8 +102,14 @@ static void flush(lv_display_t *display, const lv_area_t *area,
     lv_display_flush_ready(display);
 }
 
+static lv_obj_t *content(lv_display_t *display) {
+    lv_obj_t *screen = lv_display_get_screen_active(display);
+    assert(lv_obj_get_child_count(screen) == 1);
+    return lv_obj_get_child(screen, 0);
+}
+
 static void enter_and_unlock(lv_display_t *display) {
-    lv_obj_t *root = lv_display_get_screen_active(display);
+    lv_obj_t *root = content(display);
     assert(lv_obj_get_child_count(root) == 4);
     lv_obj_t *keyboard = lv_obj_get_child(root, 3);
     uint32_t key_index = 0;
@@ -146,7 +152,7 @@ int main(void) {
     enter_and_unlock(display);
     assert(authentications == 1 && selections == 0 && auth_cancels == 0);
     lv_timer_handler();
-    assert(labels_equal(lv_display_get_screen_active(display),
+    assert(labels_equal(content(display),
                         "Unable to unlock. Try again.") == 1);
 
     mode = MULTIPLE;
@@ -154,7 +160,7 @@ int main(void) {
     enter_and_unlock(display);
     assert(authentications == 2 && selections == 0 && administration == 0);
     lv_timer_handler();
-    lv_obj_t *root = lv_display_get_screen_active(display);
+    lv_obj_t *root = content(display);
     assert(labels_equal(root, "alpha") == 1);
     assert(labels_equal(root, "beta") == 1);
     assert(labels_equal(root, "Administration") == 1);
@@ -177,8 +183,43 @@ int main(void) {
     enter_and_unlock(display);
     assert(authentications == 5 && selections == 1 && administration == 1);
     lv_timer_handler();
-    assert(labels_equal(lv_display_get_screen_active(display),
+    assert(labels_equal(content(display),
                         "Preboot unavailable") == 1);
+
+    assert(grom_ui_show_password(ui) == 0);
+    lv_display_set_resolution(display, 1080, 2400);
+    root = content(display);
+    lv_obj_update_layout(root);
+    assert(lv_obj_get_style_transform_scale_x(root, 0) == 576);
+    assert(lv_obj_get_style_transform_scale_y(root, 0) == 576);
+    assert(lv_obj_get_x(root) == 0);
+    assert(lv_obj_get_y(root) == 187);
+    lv_obj_t *field = lv_obj_get_child(root, 1);
+    lv_obj_t *unlock = lv_obj_get_child(root, 2);
+    lv_area_t bounds;
+    lv_obj_get_coords(field, &bounds);
+    lv_obj_get_transformed_area(field, &bounds,
+                                LV_OBJ_POINT_TRANSFORM_FLAG_RECURSIVE);
+    assert(bounds.x1 >= 230 && bounds.x2 <= 855);
+    assert(bounds.y1 >= 1135 && bounds.y2 <= 1300);
+    lv_point_t point = {(bounds.x1 + bounds.x2) / 2,
+                        (bounds.y1 + bounds.y2) / 2};
+    assert(lv_indev_search_obj(lv_display_get_screen_active(display),
+                               &point) == field);
+    lv_obj_get_coords(unlock, &bounds);
+    lv_obj_get_transformed_area(unlock, &bounds,
+                                LV_OBJ_POINT_TRANSFORM_FLAG_RECURSIVE);
+    point = (lv_point_t){(bounds.x1 + bounds.x2) / 2,
+                         (bounds.y1 + bounds.y2) / 2};
+    assert(lv_indev_search_obj(lv_display_get_screen_active(display),
+                               &point) == unlock);
+
+    lv_display_set_resolution(display, 800, 600);
+    lv_obj_update_layout(root);
+    assert(lv_obj_get_style_transform_scale_x(root, 0) == 170);
+    assert(lv_obj_get_style_transform_scale_y(root, 0) == 170);
+    assert(lv_obj_get_x(root) >= 240 && lv_obj_get_x(root) <= 241);
+    assert(lv_obj_get_y(root) == 1);
     grom_ui_destroy(ui);
     lv_display_delete(display);
     lv_deinit();

@@ -104,8 +104,10 @@ viewport used to design the interactive UI.
 See [the backend call map](../docs/backend-ui-flows.md) for each flow.
 
 Build the native runner with `cmake -S design -B build-design -G Ninja`, then
-`cmake --build build-design` and run `build-design/grom-design`. SDL2 development
-files are required. Run `ctest --test-dir build-design --output-on-failure`
+`cmake --build build-design` and run `build-design/grom-design`. Pass a width and
+height, for example `build-design/grom-design 1080 2400`, to preview scaling.
+SDL2 development files are required. Run
+`ctest --test-dir build-design --output-on-failure`
 for the frontend interaction test. Its deterministic backend functions exist
 only in that test executable. The runner is a test host for the frontend, not
 grom logic.

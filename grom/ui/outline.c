@@ -50,6 +50,7 @@ struct grom_ui_frontend {
     grom_auth_session auth_session;
     grom_provision_session provision_session;
     lv_timer_t *charge_timer;
+    lv_display_t *display;
     lv_obj_t *root;
     lv_obj_t *keyboard;
     lv_obj_t *mask_label;
@@ -759,13 +760,50 @@ static void render(grom_ui_frontend *ui) {
     }
 }
 
+/* Keep the 480 x 900 composition intact while fitting it to the actual
+ * display. LVGL applies the parent transform to both drawing and hit tests. */
+static void fit_display(grom_ui_frontend *ui) {
+    int32_t width = lv_display_get_horizontal_resolution(ui->display);
+    int32_t height = lv_display_get_vertical_resolution(ui->display);
+    if(width <= 0 || height <= 0) return;
+    int32_t scale = (int64_t)width * LV_SCALE_NONE / UI_W;
+    int32_t height_limit = (int64_t)height * LV_SCALE_NONE / UI_H;
+    if(scale > height_limit) scale = height_limit;
+    if(scale < 1) scale = 1;
+    int32_t fitted_width = (int64_t)UI_W * scale / LV_SCALE_NONE;
+    int32_t fitted_height = (int64_t)UI_H * scale / LV_SCALE_NONE;
+    lv_obj_set_pos(ui->root, (width - fitted_width) / 2,
+                   (height - fitted_height) / 2);
+    lv_obj_set_style_transform_scale_x(ui->root, scale, 0);
+    lv_obj_set_style_transform_scale_y(ui->root, scale, 0);
+}
+
+static void display_resized(lv_event_t *event) {
+    grom_ui_frontend *ui = lv_event_get_user_data(event);
+    fit_display(ui);
+}
+
 grom_ui_frontend *grom_ui_create(lv_display_t *display) {
     if(!display) return NULL;
     grom_ui_frontend *ui = calloc(1, sizeof(*ui));
     if(!ui) return NULL;
-    ui->root = lv_display_get_screen_active(display);
-    lv_obj_set_style_bg_color(ui->root, UI_BG, 0);
+    ui->display = display;
+    lv_obj_t *screen = lv_display_get_screen_active(display);
+    lv_obj_set_style_bg_color(screen, UI_BG, 0);
+    lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+    ui->root = lv_obj_create(screen);
+    if(!ui->root) {
+        free(ui);
+        return NULL;
+    }
+    lv_obj_remove_style_all(ui->root);
+    lv_obj_set_size(ui->root, UI_W, UI_H);
     lv_obj_remove_flag(ui->root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_transform_pivot_x(ui->root, 0, 0);
+    lv_obj_set_style_transform_pivot_y(ui->root, 0, 0);
+    fit_display(ui);
+    lv_display_add_event_cb(display, display_resized,
+                            LV_EVENT_RESOLUTION_CHANGED, ui);
     return ui;
 }
 
@@ -814,8 +852,9 @@ void grom_ui_destroy(grom_ui_frontend *ui) {
     if(!ui) return;
     lv_async_call_cancel(refresh_later, ui);
     if(ui->charge_timer) lv_timer_delete(ui->charge_timer);
+    lv_display_remove_event_cb_with_user_data(ui->display, display_resized, ui);
     cancel_sessions(ui);
     scrub_widgets(ui->root);
-    lv_obj_clean(ui->root);
+    lv_obj_delete(ui->root);
     free(ui);
 }
