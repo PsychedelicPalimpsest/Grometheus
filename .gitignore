@@ -3,6 +3,8 @@
 /out/
 /boot-grom.img*
 /miniui/build/
+/motogfast/RAV_RETUS/boot-grom*.img
+/motogfast/RAV_RETUS/boot-miniui-*.img
 /gromui/build*/
 /gromui/cmake-build*/
 /gromui/*.log
