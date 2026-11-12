@@ -64,6 +64,8 @@ struct grom_ui_frontend {
     bool keyboard_open;
 };
 
+static void fit_display(grom_ui_frontend *ui);
+
 static void secure_clear(void *pointer, size_t size) {
     volatile uint8_t *bytes = pointer;
     while(size--) *bytes++ = 0;
@@ -542,8 +544,11 @@ static lv_obj_t *plain_field(grom_ui_frontend *ui, const char *placeholder,
 }
 
 static void make_keyboard(grom_ui_frontend *ui, bool visible) {
-    ui->keyboard = lv_keyboard_create(ui->root);
-    lv_obj_set_size(ui->keyboard, UI_W, 304);
+    /* Buttonmatrix checks its key rectangles in its own coordinates. A
+     * transformed parent scales the drawing without scaling those rectangles,
+     * so the keyboard must live directly on the display's screen. */
+    ui->keyboard = lv_keyboard_create(lv_display_get_screen_active(ui->display));
+    lv_obj_set_align(ui->keyboard, LV_ALIGN_TOP_LEFT);
     lv_obj_set_style_bg_color(ui->keyboard, UI_BG, 0);
     lv_obj_set_style_bg_color(ui->keyboard, UI_SURFACE, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(ui->keyboard, UI_SURFACE,
@@ -559,6 +564,7 @@ static void make_keyboard(grom_ui_frontend *ui, bool visible) {
     lv_obj_add_event_cb(ui->keyboard, keyboard_value, LV_EVENT_ALL, ui);
     if(!visible) lv_obj_add_flag(ui->keyboard, LV_OBJ_FLAG_HIDDEN);
     ui->keyboard_open = visible;
+    fit_display(ui);
 }
 
 static void page(grom_ui_frontend *ui, const char *title, const char *body) {
@@ -631,6 +637,7 @@ static void ack_changed(lv_event_t *event) {
 }
 
 static void render(grom_ui_frontend *ui) {
+    if(ui->keyboard) lv_obj_delete(ui->keyboard);
     ui->keyboard = ui->mask_label = ui->primary = NULL;
     ui->slot_label = ui->slot_size = NULL;
     scrub_widgets(ui->root);
@@ -761,7 +768,8 @@ static void render(grom_ui_frontend *ui) {
 }
 
 /* Keep the 480 x 900 composition intact while fitting it to the actual
- * display. LVGL applies the parent transform to both drawing and hit tests. */
+ * display. The keyboard sits on the screen because its key hit areas use its
+ * own, untransformed coordinates. */
 static void fit_display(grom_ui_frontend *ui) {
     int32_t width = lv_display_get_horizontal_resolution(ui->display);
     int32_t height = lv_display_get_vertical_resolution(ui->display);
@@ -776,6 +784,12 @@ static void fit_display(grom_ui_frontend *ui) {
                    (height - fitted_height) / 2);
     lv_obj_set_style_transform_scale_x(ui->root, scale, 0);
     lv_obj_set_style_transform_scale_y(ui->root, scale, 0);
+    if(ui->keyboard) {
+        int32_t keyboard_height = (int64_t)304 * scale / LV_SCALE_NONE;
+        lv_obj_set_size(ui->keyboard, fitted_width, keyboard_height);
+        lv_obj_set_pos(ui->keyboard, (width - fitted_width) / 2,
+                       (height - fitted_height) / 2 + fitted_height - keyboard_height);
+    }
 }
 
 static void display_resized(lv_event_t *event) {
@@ -854,6 +868,7 @@ void grom_ui_destroy(grom_ui_frontend *ui) {
     if(ui->charge_timer) lv_timer_delete(ui->charge_timer);
     lv_display_remove_event_cb_with_user_data(ui->display, display_resized, ui);
     cancel_sessions(ui);
+    if(ui->keyboard) lv_obj_delete(ui->keyboard);
     scrub_widgets(ui->root);
     lv_obj_delete(ui->root);
     free(ui);

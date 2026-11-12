@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "Android SDK emulator alternate fbdev kernel with touch",
+  "arch": "x86_64",
+  "modules": [
+    "virtio_input.ko",
+    "virtio_dma_buf.ko",
+    "virtio-gpu.ko"
+  ]
+}

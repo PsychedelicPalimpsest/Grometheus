@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -15,8 +16,9 @@ import struct
 import subprocess
 import sys
 import tempfile
+import zipfile
 
-from scripts import image_builder
+from scripts import debug_adb, driver_bundle, image_builder, romdump
 
 
 ROOT = Path(__file__).resolve().parent
@@ -29,9 +31,10 @@ STEPS = (
     "Inspect boot image or ramdisk and detect target architecture (when supplied)",
     "Find the Android SDK and pinned Magisk ONDK",
     "Install the pinned ONDK if missing",
+    "Validate any selected driver profile against supplied modules and target kernel",
     "Build pinned magiskboot and the combined static init for the target ABI",
     "Run builder checks and static gromui host tests",
-    "Patch and reopen the image; check static ELF, stock init, and hashes",
+    "Patch and reopen the image; check static ELF, stock init, drivers, and hashes",
 )
 
 
@@ -244,13 +247,27 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="build static grom init and optionally patch a boot image")
     parser.add_argument("image", nargs="?", type=Path,
-                        help="boot.img, init_boot.img, standalone ramdisk, or a directory")
+                        help="boot image, ramdisk, ROM ZIP, or ROM directory")
     parser.add_argument("-o", "--output", type=Path,
                         help="patched image path (default: out/grom-images/<source>-grom.img)")
     parser.add_argument("--arch", choices=ARCHES,
                         help="architecture fallback when image detection is inconclusive")
     parser.add_argument("--magiskboot", type=Path,
                         help="use this host magiskboot instead of building pinned source")
+    parser.add_argument("--driver-profile", type=Path,
+                        help="grom/devices profile name or JSON path")
+    parser.add_argument("--driver-source", type=Path,
+                        help="directory containing matching lib/modules and firmware files")
+    parser.add_argument("--romdump", type=Path,
+                        help="ROM ZIP or directory to extract matching vendor modules from")
+    parser.add_argument("--vendor-slot", choices=('a', 'b'),
+                        help="vendor slot when both super partitions contain data")
+    parser.add_argument("--touch-diagnostics", action="store_true",
+                        help="show temporary touchscreen diagnostics on the preboot display")
+    parser.add_argument("--debug-adb", action="store_true",
+                        help="bundle a recovery ADB shell for preboot USB debugging")
+    parser.add_argument("--debug-adb-source", type=Path,
+                        help="recovery boot image, cpio, or unpacked root with system/bin/adbd")
     parser.add_argument("--sdk", metavar="PATH", help="Android SDK/ONDK root (auto-detected)")
     parser.add_argument("--offline", action="store_true",
                         help="do not download ONDK or Cargo dependencies")
@@ -270,6 +287,16 @@ def main(argv: list[str] | None = None) -> int:
             raise BuildError("--output requires an input image")
         if args.arch and not args.image:
             raise BuildError("--arch requires an input image")
+        if args.driver_profile and not args.image:
+            raise BuildError("driver bundling requires an image")
+        if args.driver_source and not args.driver_profile:
+            raise BuildError("--driver-source requires --driver-profile")
+        if args.driver_source and args.romdump:
+            raise BuildError("choose --driver-source or --romdump")
+        if args.vendor_slot and not args.driver_profile:
+            raise BuildError("--vendor-slot requires --driver-profile")
+        if args.debug_adb_source and not args.debug_adb:
+            raise BuildError("--debug-adb-source requires --debug-adb")
         if args.jobs < 1:
             raise BuildError("--jobs must be at least 1")
         require_tools("bash", "cmake", "git", "make", "readelf", "grep", "install")
@@ -291,10 +318,18 @@ def main(argv: list[str] | None = None) -> int:
             env["CARGO_NET_OFFLINE"] = "true"
         ensure_ondk(sdk, version, offline=args.offline, env=env)
         (ROOT / "out/grombake").mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="image-", dir=ROOT / "out/grombake") as tmp:
+        with tempfile.TemporaryDirectory(prefix="image-", dir=ROOT / "out/grombake") as tmp, ExitStack() as stack:
             workdir = Path(tmp)
             image = None
             tool = None
+            rom = None
+            image_path = args.image
+            if args.image and (args.image.suffix.lower() == '.zip' or
+                               (args.image.is_dir() and args.driver_profile and not args.driver_source)):
+                rom = stack.enter_context(romdump.RomDump(args.image))
+                image_path = rom.boot_image(workdir / 'rom-boot')
+            if args.romdump:
+                rom = stack.enter_context(romdump.RomDump(args.romdump))
             if args.image:
                 if args.magiskboot:
                     tool = args.magiskboot.expanduser().resolve()
@@ -302,12 +337,39 @@ def main(argv: list[str] | None = None) -> int:
                         raise BuildError(f"magiskboot is not executable: {tool}")
                 else:
                     tool = pinned_magiskboot(workdir, env, args.release)
-                image = image_builder.prepare_image(args.image, workdir, tool, args.arch)
+                image = image_builder.prepare_image(image_path, workdir, tool, args.arch)
                 abis = [image.arch]
                 say(f"detected {image.arch} from {image.source.name} ({image.kind})")
                 config = workdir / "grom-target.prop"
                 write_abi_config(config, abis)
                 env["GROM_CONFIG"] = str(config)
+            bundle = None
+            if args.driver_profile:
+                assert image is not None
+                profile = args.driver_profile
+                if not profile.is_file():
+                    if profile.parent != Path("."):
+                        raise BuildError(f"driver profile does not exist: {profile}")
+                    filename = profile.name if profile.suffix == ".json" else profile.name + ".json"
+                    profile = ROOT / "grom/devices" / filename
+                target_release = driver_bundle.kernel_release(image.workdir / "kernel")
+                if target_release is None:
+                    for name in ("kernel-ranchu", "kernel", "Image"):
+                        target_release = driver_bundle.kernel_release(image.source.parent / name)
+                        if target_release:
+                            break
+                _, modules, firmware = driver_bundle.requirements(profile, image.arch, target_release)
+                if args.driver_source:
+                    source = args.driver_source.expanduser().resolve()
+                    if not source.is_dir():
+                        raise BuildError(f"driver source is not a directory: {source}")
+                else:
+                    if rom is None:
+                        raise BuildError("driver bundling needs --driver-source or a ROM ZIP/directory (or --romdump)")
+                    source = romdump.extract_modules(rom, modules, workdir / 'rom-vendor',
+                                                     args.vendor_slot, firmware)
+                bundle = driver_bundle.load(profile, source, image.arch, target_release)
+                say(f"driver profile {bundle.name}: {len(bundle.modules)} modules")
             say("building combined init for " + ", ".join(abis))
             (OUTPUT / "build.json").unlink(missing_ok=True)
             run(["bash", str(BUILD_SCRIPT)], env=env)
@@ -328,12 +390,33 @@ def main(argv: list[str] | None = None) -> int:
                 check_static_elf(binary, image.arch)
                 if args.output:
                     destination = args.output
+                elif rom:
+                    name = re.sub(r'[^A-Za-z0-9_.-]+', '-', rom.source.stem)
+                    destination = ROOT / 'out/grom-images' / f'{name}-grom-{image.source.name}'
                 else:
                     digest = hashlib.sha256(image.source.read_bytes()).hexdigest()[:8]
                     name = f"{image.source.parent.name}-{image.source.stem}-{digest}-grom"
                     destination = ROOT / "out/grom-images" / (name + image.source.suffix)
                 say(f"patching a copy of {image.source} -> {destination}")
-                image_info = image_builder.patch_image(image, binary, destination, tool)
+                adb_source = None
+                if args.debug_adb:
+                    if args.debug_adb_source:
+                        adb_source = args.debug_adb_source.expanduser().resolve()
+                    elif args.driver_profile and "motogfast" in args.driver_profile.name:
+                        adb_source = ROOT / "motogfast/twrp-3.5.0-0-rav-sofia.img"
+                    else:
+                        raise BuildError("--debug-adb needs --debug-adb-source for this target")
+                    if not adb_source.exists():
+                        raise BuildError(f"ADB source does not exist: {adb_source}")
+                image_info = image_builder.patch_image(image, binary, destination, tool, bundle,
+                                                       args.touch_diagnostics, adb_source)
+                if args.image and args.image.suffix.lower() == '.zip':
+                    image_info['requested_input'] = str(args.image.expanduser().resolve())
+                    image_info['patched_input'] = f"{args.image.expanduser().resolve()}!{image.source.name}"
+                if rom:
+                    image_info['romdump_source'] = str(rom.source)
+                    if args.vendor_slot:
+                        image_info['vendor_slot'] = args.vendor_slot
                 image_info["magiskboot_sha256"] = hashlib.sha256(tool.read_bytes()).hexdigest()
                 sidecar = Path(image_info["output"] + ".json")
                 sidecar.write_text(json.dumps(image_info, indent=2) + "\n")
@@ -344,7 +427,9 @@ def main(argv: list[str] | None = None) -> int:
                 say(f"verified patched image: {image_info['output']}")
             say("These outputs remain preboot scaffolds; Android handoff is not implemented.")
         return 0
-    except (BuildError, image_builder.ImageError, OSError) as exc:
+    except (BuildError, driver_bundle.BundleError, debug_adb.AdbError,
+            image_builder.ImageError,
+            romdump.RomError, OSError, zipfile.BadZipFile) as exc:
         print(f"[grombake] ERROR: {exc}", file=sys.stderr)
         return 1
 

@@ -1,6 +1,8 @@
 # Local build outputs
 /android_bootable_recovery/
 /out/
+/boot-grom.img*
+/miniui/build/
 /gromui/build*/
 /gromui/cmake-build*/
 /gromui/*.log

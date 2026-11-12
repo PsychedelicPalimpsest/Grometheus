@@ -98,9 +98,29 @@ areas and erased after a backend call. Calls are synchronous and direct; this
 refactor adds no IPC. The native SDL runner in `design/preview.c` and combined
 preboot test renderer use an inert backend stub that rejects unlock and reports
 other operations unavailable. They do not authenticate, provision, charge or
-boot anything. The combined renderer still has no input device hookup or
-production handoff, and its emulator display is not the 480-by-900 portrait
-viewport used to design the interactive UI.
+boot anything. The combined renderer accepts touch from an already available
+Linux `/dev/input/event*` touchscreen. Its input layer lives in `grom/src/touch.c`,
+outside the gromui display library. It discovers devices by capabilities, reads
+single-touch and both multitouch protocols, maps absolute axes to the display,
+and cancels a press after dropped events or device removal. Under a tmpfs `/dev`
+it creates input nodes from sysfs. It retries discovery as devices appear.
+Touch requires the kernel driver and any firmware to be ready. The combined
+preboot executable and emulator harness use `grom/src/driver_bundle.c` to load
+the ordered modules staged by a profile under `/grom/drivers/`, then unlink
+the staged `.ko` files. Device profiles live under `grom/devices/`; grombake
+can bundle the selected drivers from a matching firmware tree. The Moto G Fast
+profile loaded the Himax driver on the physical Moto G Fast. The protocol-B
+decoder now preserves coordinates reported before a new tracking ID; a
+temporary debug boot with firmware extracted from the phone's vendor
+partition delivered stationary keyboard taps, and the user confirmed typing
+works.
+The type-B reader initializes its current slot from the kernel and refreshes
+it after dropped-event resynchronization, so it can handle a first touch that
+does not repeat `ABS_MT_SLOT`.
+Device-specific coordinate transforms remain future work.
+Touch input reaches the outline UI, but the inert backend still rejects unlock
+and there is no production handoff. `GROMUI_SCREEN_SIZE` can test a portrait
+viewport in the SDK emulator.
 See [the backend call map](../docs/backend-ui-flows.md) for each flow.
 
 Build the native runner with `cmake -S design -B build-design -G Ninja`, then
@@ -134,16 +154,17 @@ separate fbdev-enabled Linux kernel. ARM64 was cross-built, not device-tested.
 # Python environment for SDK screenshot capture (host tooling only)
 python3 -m venv build/capture-env
 build/capture-env/bin/pip install grpcio grpcio-tools pillow
-# Runner extracts the matching virtio-gpu module from the SDK vendor image.
-scripts/run_emulator.sh test_device --headless -- -grpc 8556
+# Runner extracts matching virtio display and touch modules from the SDK vendor image.
+GROMUI_SCREEN_SIZE=720x1560 scripts/run_emulator.sh test_device --headless -- -grpc 8556
 # In another terminal, before terminating that owned emulator:
 build/capture-env/bin/python scripts/capture.py docs/screenshot.png
 ```
 
 For the combined grom build, set `GROMUI_RAMDISK_IMAGE` to a standalone
 ramdisk patched by root `grombake.py` and `GROMUI_BINARY` to its x86_64 init.
-The runner preserves that image's `/init` and `/init.orig` while staging the
-emulator's GPU module in a separate temporary copy.
+The runner preserves that image's `/init` and `/init.orig`. If the image has no
+driver bundle, it stages the SDK emulator's ordered virtio modules in its
+temporary copy using the same profile format as grombake.
 
 Use the SDK gRPC screenshot endpoint. QEMU monitor `screendump` captures a
 separate black surface with this emulator's gfxstream integration. ADB and

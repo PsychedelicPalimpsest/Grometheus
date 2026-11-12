@@ -11,6 +11,7 @@ import struct
 import subprocess
 
 from gromui.scripts.ramdisk_tools import split_first_archive
+from scripts import driver_bundle, debug_adb
 
 
 class ImageError(Exception):
@@ -100,6 +101,34 @@ def cpio_extract(tool: Path, archive: Path, entry: str, dest: Path,
     return dest.is_file() and dest.stat().st_size > 0
 
 
+def verify_ramdisk_parents(archive: Path, staged_paths: list[str]) -> None:
+    """The kernel cpio unpacker needs directory entries before nested files."""
+    data = archive.read_bytes()
+    position = 0
+    entries: dict[str, tuple[int, int]] = {}
+    while data[position:position + 6] in (b"070701", b"070702"):
+        fields = [int(data[position + 6 + i * 8:position + 14 + i * 8], 16)
+                  for i in range(13)]
+        mode, size, name_size = fields[1], fields[6], fields[11]
+        name = data[position + 110:position + 110 + name_size - 1].decode()
+        content = (position + 110 + name_size + 3) & ~3
+        position = (content + size + 3) & ~3
+        if name == "TRAILER!!!":
+            break
+        entries[name] = (mode, len(entries))
+    for path in staged_paths:
+        if path not in entries:
+            raise ImageError(f"repacked ramdisk is missing {path}")
+        parent = Path(path).parent
+        while parent != Path("."):
+            name = parent.as_posix()
+            if name not in entries or entries[name][0] & 0o170000 != 0o040000:
+                raise ImageError(f"ramdisk lacks directory /{name} for /{path}")
+            if entries[name][1] >= entries[path][1]:
+                raise ImageError(f"ramdisk directory /{name} follows /{path}")
+            parent = parent.parent
+
+
 def ramdisk_arch(tool: Path, first: Path, cwd: Path) -> str | None:
     probe = cwd / "arch-probe.cpio"
     shutil.copy2(first, probe)
@@ -185,7 +214,10 @@ def prepare_image(source: Path, workdir: Path, tool: Path,
     return ImageInput(requested, source, image_dir, kind, compression, arch)
 
 
-def patch_image(spec: ImageInput, init: Path, output: Path, tool: Path) -> dict[str, object]:
+def patch_image(spec: ImageInput, init: Path, output: Path, tool: Path,
+                bundle: driver_bundle.Bundle | None = None,
+                touch_diagnostics: bool = False,
+                debug_adb_source: Path | None = None) -> dict[str, object]:
     directory = spec.workdir
     first = directory / "first.cpio"
     remainder = directory / "remainder.cpio"
@@ -199,9 +231,39 @@ def patch_image(spec: ImageInput, init: Path, output: Path, tool: Path) -> dict[
         raise ImageError(f"stock init is {stock_arch}, expected {spec.arch}")
     spec.stock_init = stock
     shutil.copy2(init, directory / "grom-init.bin")
-    run([str(tool), "cpio", str(first),
-         "add 0755 init grom-init.bin",
-         "add 0750 init.orig stock-init.bin"], directory)
+    additions = ["add 0755 init grom-init.bin",
+                 "add 0750 init.orig stock-init.bin"]
+    staged_paths = ["init", "init.orig"]
+    if bundle:
+        staging = directory / "driver-stage"
+        driver_bundle.stage(bundle, staging)
+        for path in ("grom/drivers/modules.load", *(entry.path for entry in bundle.entries)):
+            additions.append(f"add 0644 {path} {staging / path}")
+            staged_paths.append(path)
+    if touch_diagnostics:
+        marker = directory / "touch-diagnostics.txt"
+        marker.write_text("# touch diagnostics\n" +
+                          "".join(name + "\n" for name in (bundle.modules if bundle else ())))
+        additions.append(f"add 0644 grom/touch-diagnostics {marker}")
+        staged_paths.append("grom/touch-diagnostics")
+    adb_files: list[tuple[str, Path, int]] = []
+    if debug_adb_source:
+        adb_files, applets = debug_adb.stage(debug_adb_source, tool,
+                                            directory / "adb-stage", spec.arch,
+                                            Path(__file__).resolve().parent.parent)
+        for path, file, mode in adb_files:
+            additions.append(f"add {mode:04o} {path} {file}")
+            staged_paths.append(path)
+        for applet in applets:
+            additions.append(f"ln toybox system/bin/{applet}")
+            staged_paths.append(f"system/bin/{applet}")
+    required_dirs = {parent.as_posix() for path in staged_paths
+                     for parent in Path(path).parents if parent != Path(".")}
+    directories = [f"mkdir 0755 {name}" for name in sorted(required_dirs,
+                   key=lambda value: (value.count("/"), value))
+                   if not cpio_exists(tool, first, name, directory)]
+    additions = directories + additions
+    run([str(tool), "cpio", str(first), *additions], directory)
     (directory / "ramdisk.cpio").write_bytes(first.read_bytes() + original_remainder)
 
     packed = directory / "packed.img"
@@ -240,6 +302,7 @@ def patch_image(spec: ImageInput, init: Path, output: Path, tool: Path) -> dict[
         raise ImageError(f"repacked ramdisk is invalid: {exc}") from exc
     if verified_remainder.read_bytes() != original_remainder:
         raise ImageError("repacked ramdisk changed a later CPIO archive")
+    verify_ramdisk_parents(verified_first, staged_paths)
     found_init = verify / "grom-init.bin"
     found_stock = verify / "stock-init.bin"
     if not cpio_extract(tool, verified_first, "init", found_init, verify):
@@ -250,6 +313,28 @@ def patch_image(spec: ImageInput, init: Path, output: Path, tool: Path) -> dict[
         raise ImageError("repacked /init differs from the built grom binary")
     if found_stock.read_bytes() != stock.read_bytes():
         raise ImageError("repacked /init.orig differs from stock init")
+    if bundle:
+        staging = directory / "driver-stage"
+        for path in ("grom/drivers/modules.load", *(entry.path for entry in bundle.entries)):
+            found = verify / "bundle-check" / path
+            found.parent.mkdir(parents=True, exist_ok=True)
+            if not cpio_extract(tool, verified_first, path, found, verify):
+                raise ImageError(f"repacked image is missing {path}")
+            if found.read_bytes() != (staging / path).read_bytes():
+                raise ImageError(f"repacked image changed {path}")
+    if touch_diagnostics:
+        found = verify / "touch-diagnostics.txt"
+        if not cpio_extract(tool, verified_first, "grom/touch-diagnostics", found, verify):
+            raise ImageError("repacked image is missing touch diagnostics marker")
+        if found.read_bytes() != (directory / "touch-diagnostics.txt").read_bytes():
+            raise ImageError("repacked image changed touch diagnostics marker")
+    for path, source, _ in adb_files:
+        found = verify / "adb-check" / path
+        found.parent.mkdir(parents=True, exist_ok=True)
+        if not cpio_extract(tool, verified_first, path, found, verify):
+            raise ImageError(f"repacked image is missing {path}")
+        if found.read_bytes() != source.read_bytes():
+            raise ImageError(f"repacked image changed {path}")
 
     output = output.expanduser().resolve()
     if output == spec.requested or output == spec.source:
@@ -258,7 +343,7 @@ def patch_image(spec: ImageInput, init: Path, output: Path, tool: Path) -> dict[
     temporary = output.with_name(output.name + ".tmp")
     shutil.copy2(packed, temporary)
     temporary.replace(output)
-    return {
+    result = {
         "requested_input": str(spec.requested),
         "patched_input": str(spec.source),
         "kind": spec.kind,
@@ -272,3 +357,15 @@ def patch_image(spec: ImageInput, init: Path, output: Path, tool: Path) -> dict[
         "bytes": output.stat().st_size,
         "status": "preboot scaffold; Android handoff is not implemented",
     }
+    if bundle:
+        result["drivers"] = {
+            "profile": bundle.name,
+            "modules": list(bundle.modules),
+            "files": {entry.path: entry.sha256 for entry in bundle.entries},
+        }
+    if touch_diagnostics:
+        result["touch_diagnostics"] = True
+    if debug_adb_source:
+        result["debug_adb"] = {"source": str(debug_adb_source),
+                               "files": len(adb_files), "usb_only": True}
+    return result

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "name": "Moto G Fast Android 10 Himax INX panel",
+  "arch": "arm64-v8a",
+  "kernel_release": "4.14.117-perf+",
+  "modules": [
+    "himax_v2_mmi_hx83112.ko",
+    "himax_v2_mmi.ko"
+  ],
+  "firmware": [
+    "inx_Himax_firmware.bin"
+  ]
+}

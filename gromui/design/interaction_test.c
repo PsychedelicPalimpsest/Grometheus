@@ -104,14 +104,16 @@ static void flush(lv_display_t *display, const lv_area_t *area,
 
 static lv_obj_t *content(lv_display_t *display) {
     lv_obj_t *screen = lv_display_get_screen_active(display);
-    assert(lv_obj_get_child_count(screen) == 1);
+    assert(lv_obj_get_child_count(screen) >= 1);
     return lv_obj_get_child(screen, 0);
 }
 
 static void enter_and_unlock(lv_display_t *display) {
     lv_obj_t *root = content(display);
-    assert(lv_obj_get_child_count(root) == 4);
-    lv_obj_t *keyboard = lv_obj_get_child(root, 3);
+    assert(lv_obj_get_child_count(root) == 3);
+    lv_obj_t *screen = lv_display_get_screen_active(display);
+    assert(lv_obj_get_child_count(screen) == 2);
+    lv_obj_t *keyboard = lv_obj_get_child(screen, 1);
     uint32_t key_index = 0;
     const char *key = NULL;
     for(; key_index < 50; key_index++) {
@@ -194,6 +196,12 @@ int main(void) {
     assert(lv_obj_get_style_transform_scale_y(root, 0) == 576);
     assert(lv_obj_get_x(root) == 0);
     assert(lv_obj_get_y(root) == 187);
+    lv_obj_t *keyboard = lv_obj_get_child(lv_display_get_screen_active(display), 1);
+    lv_area_t keyboard_bounds;
+    lv_obj_get_coords(keyboard, &keyboard_bounds);
+    assert(keyboard_bounds.x1 == 0 && keyboard_bounds.y1 == 1528);
+    assert(lv_area_get_width(&keyboard_bounds) == 1080);
+    assert(lv_area_get_height(&keyboard_bounds) == 684);
     lv_obj_t *field = lv_obj_get_child(root, 1);
     lv_obj_t *unlock = lv_obj_get_child(root, 2);
     lv_area_t bounds;

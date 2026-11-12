@@ -18,31 +18,13 @@
 
 #include "gromui.h"
 #include "timing.h"
+#include "driver_bundle.h"
 
 #ifdef GROMUI_USE_LVGL
 int run_lvgl(gromui_display *display, int hold);
 #endif
 
 static int mounted_devtmpfs;
-
-/* Emulator harness only. A production init owns its own boot and device policy. */
-static void load_emulator_modules(void) {
-    const char *modules[] = {"virtio_pci_modern_dev", "virtio_pci", "virtio_dma_buf", "virtio-gpu"};
-
-    for (size_t i = 0; i < sizeof(modules) / sizeof(modules[0]); ++i) {
-        char path[128];
-        snprintf(path, sizeof(path), "/lib/modules/%s.ko", modules[i]);
-
-        int fd = open(path, O_RDONLY | O_CLOEXEC);
-        if (fd < 0) {
-            continue;
-        }
-        if (syscall(SYS_finit_module, fd, "", 0) < 0) {
-            perror(path);
-        }
-        close(fd);
-    }
-}
 
 static void early_boot(void) {
     mkdir("/proc", 0755);
@@ -53,7 +35,8 @@ static void early_boot(void) {
     mounted_devtmpfs = mount("devtmpfs", "/dev", "devtmpfs", 0, NULL) == 0;
     mkdir("/dev/dri", 0755);
     mkdir("/dev/graphics", 0755);
-    load_emulator_modules();
+    if (grom_drivers_load("/grom/drivers") < 0)
+        fputs("gromui: some staged drivers failed to load\n", stderr);
 }
 
 static void create_node(const char *sys_path, const char *dev_path) {

@@ -90,12 +90,17 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := libgrom
 LOCAL_SRC_FILES := \
     $(GROM_PROJECT_ROOT)/grom/src/preboot.c \
+    $(GROM_PROJECT_ROOT)/grom/src/driver_bundle.c \
+    $(GROM_PROJECT_ROOT)/grom/src/debug_adb.c \
+    $(GROM_PROJECT_ROOT)/grom/src/debug_ui.c \
     $(GROM_PROJECT_ROOT)/grom/src/test_ui.c \
+    $(GROM_PROJECT_ROOT)/grom/src/touch.c \
     $(GROM_PROJECT_ROOT)/grom/src/backend_stub.c \
     $(GROM_PROJECT_ROOT)/grom/ui/outline.c \
     $(GROM_PROJECT_ROOT)/grom/ui/ghost.c
 LOCAL_C_INCLUDES := \
     $(GROM_PROJECT_ROOT)/grom/include \
+    $(GROM_PROJECT_ROOT)/grom/src \
     $(GROM_PROJECT_ROOT)/grom/ui \
     $(GROM_PROJECT_ROOT)/gromui/include \
     $(GROM_LVGL_DIR)

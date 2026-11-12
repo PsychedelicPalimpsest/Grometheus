@@ -13,9 +13,20 @@ preboot hook compiled into `magiskinit`. The harness is not production init.
 `grombake.py` automates the static combined build, image copy patching, and
 verification. It does not flash devices. Patched images still stop in preboot.
 The combined binary is an integration scaffold that starts a supervised LVGL
-display test and waits in preboot; it does not boot Android yet. The displayed
-password field accepts no input. Credential input, charger policy, encryption,
-and provisioning are not implemented. Read `gromui/README.md` before working on
+display test and waits in preboot; it does not boot Android yet. Touch reaches
+the displayed password field, but the inert backend rejects authentication.
+Credential processing, charger policy, encryption,
+and provisioning are not implemented. Device driver profiles live in
+`grom/devices`; `grombake.py` can bundle ordered early modules and firmware
+from a supplied source tree. The preboot loader unlinks staged module files
+after attempting to load them. On the Moto G Fast Android 10 test boot,
+the Himax touchscreen registers. A protocol-B decoder fix for coordinates
+reported before a tracking ID was tested on the device: stationary keyboard
+taps now reach LVGL, and the user confirmed physical typing works on a
+temporary debug boot using firmware extracted from the phone's vendor
+partition. The opt-in USB ADB image was booted on the device and `adb shell id`
+returned root.
+Read `gromui/README.md` before working on
 that component; preserve its documented library and executable boundaries.
 
 This file records agreed product intent and engineering constraints. Do not
@@ -219,6 +230,10 @@ it cannot undo a dump already taken.
   choosing hooks. Record versions and evidence for compatibility claims.
 - Use emulator testing for boot sequencing and failure behavior; distinguish
   it from physical-device proof. Cross-compilation alone is not device testing.
+- The opt-in `grombake.py --debug-adb` image carries an unauthenticated root
+  USB shell for preboot diagnosis. It is an explicit debug exception to the
+  intended pre-authentication interface and must never be treated as a secure
+  deployment image. Normal images omit the ADB payload.
 - Test security-relevant behavior directly: slot separation, ambiguous matches,
   malformed metadata, bounds, cleanup, provisioning allocation, interruption,
   and failure paths. Report what the tests establish and what remains unknown.
