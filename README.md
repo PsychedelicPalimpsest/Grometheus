@@ -3,9 +3,9 @@
 grom is an Android multiboot project. The current combined `/init` build is an
 integration scaffold, **not a bootable multiboot implementation**. Its preboot
 hook starts a supervised LVGL display test and then waits indefinitely because
-credential input, charger handling, slot authentication, storage mapping and
+credential processing, charger handling, slot authentication, storage mapping and
 safe handoff are still unimplemented. It cannot boot an Android OS in this
-state. The test screen does not accept input.
+state. The test screen accepts touch input, but its backend rejects unlock.
 
 ## Layout
 
@@ -18,8 +18,8 @@ state. The test screen does not accept input.
 - `grombake.py`: detects the boot image architecture, builds the matching static
   combined init, patches an image copy, reopens it for verification, and records
   hashes. `scripts/build-init.sh` is its lower-level build step.
-- `motogfast/`: supplied physical device reference artifacts. They are not
-  evidence of a working combined boot path.
+- `motogfast/`: device research notes and extracted text references. Firmware
+  images stay local and are not evidence of a working combined boot path.
 
 The current emulator display result is [shown here](docs/preboot-lvgl.png).
 See [backend calls from the preboot UI](docs/backend-ui-flows.md) for the
@@ -83,8 +83,8 @@ positional argument and the archive with `--romdump /path/to/stock-rom.zip`.
 For a USB shell in preboot, build with `--debug-adb`. The builder copies
 `adbd`, `sh`, `toybox`, the Android linker, and their ELF dependencies from a
 matching recovery image into the ramdisk. Supply that image with
-`--debug-adb-source /path/to/recovery.img`; the Moto G Fast driver profile
-defaults to `motogfast/twrp-3.5.0-0-rav-sofia.img` when no source is given.
+`--debug-adb-source /path/to/recovery.img`; recovery images are not bundled
+in this source tree.
 The shell is available as `adb shell`, and `adb shell dmesg` includes grom's
 stderr diagnostics. The debug command accepts display-pixel coordinates and
 captures the renderer's current frame as a PPM image:

@@ -1,6 +1,8 @@
 """Checks for toolchain selection and ELF validation in the build pipeline."""
 
 from pathlib import Path
+from contextlib import redirect_stderr
+from io import StringIO
 import struct
 import tempfile
 import unittest
@@ -17,6 +19,12 @@ def newc_entry(name: str, mode: int) -> bytes:
 
 
 class BuilderChecks(unittest.TestCase):
+    def test_debug_adb_requires_external_recovery_image(self):
+        errors = StringIO()
+        with redirect_stderr(errors):
+            self.assertEqual(grombake.main(["--debug-adb"]), 1)
+        self.assertIn("--debug-adb-source", errors.getvalue())
+
     def test_ramdisk_rejects_nested_file_without_parent_directory(self):
         with tempfile.TemporaryDirectory() as temp:
             archive = Path(temp) / "ramdisk.cpio"

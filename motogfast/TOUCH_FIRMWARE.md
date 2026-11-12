@@ -1,5 +1,8 @@
 # Moto G Fast touchscreen firmware findings
 
+The firmware images and extracted binary artifacts discussed here are local
+inputs; they are not part of the source repository.
+
 ## Artifact inspected
 
 The local stock firmware archive is

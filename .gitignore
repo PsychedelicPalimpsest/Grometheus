@@ -3,8 +3,13 @@
 /out/
 /boot-grom.img*
 /miniui/build/
-/motogfast/RAV_RETUS/boot-grom*.img
-/motogfast/RAV_RETUS/boot-miniui-*.img
+# Local Moto firmware inputs and generated boot images. Keep text references.
+/motogfast/RAV_RETUS/*
+!/motogfast/RAV_RETUS/header
+!/motogfast/RAV_RETUS/ramdisk-ext/
+/motogfast/RAV_RETUS/ramdisk-ext/*
+!/motogfast/RAV_RETUS/ramdisk-ext/fstab.qcom
+/motogfast/*.img
 /gromui/build*/
 /gromui/cmake-build*/
 /gromui/*.log

@@ -297,6 +297,8 @@ def main(argv: list[str] | None = None) -> int:
             raise BuildError("--vendor-slot requires --driver-profile")
         if args.debug_adb_source and not args.debug_adb:
             raise BuildError("--debug-adb-source requires --debug-adb")
+        if args.debug_adb and not args.debug_adb_source:
+            raise BuildError("--debug-adb requires --debug-adb-source with a recovery image")
         if args.jobs < 1:
             raise BuildError("--jobs must be at least 1")
         require_tools("bash", "cmake", "git", "make", "readelf", "grep", "install")
@@ -400,12 +402,7 @@ def main(argv: list[str] | None = None) -> int:
                 say(f"patching a copy of {image.source} -> {destination}")
                 adb_source = None
                 if args.debug_adb:
-                    if args.debug_adb_source:
-                        adb_source = args.debug_adb_source.expanduser().resolve()
-                    elif args.driver_profile and "motogfast" in args.driver_profile.name:
-                        adb_source = ROOT / "motogfast/twrp-3.5.0-0-rav-sofia.img"
-                    else:
-                        raise BuildError("--debug-adb needs --debug-adb-source for this target")
+                    adb_source = args.debug_adb_source.expanduser().resolve()
                     if not adb_source.exists():
                         raise BuildError(f"ADB source does not exist: {adb_source}")
                 image_info = image_builder.patch_image(image, binary, destination, tool, bundle,
