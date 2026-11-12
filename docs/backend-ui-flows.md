@@ -70,11 +70,14 @@ UI interface.
 “Shut down” action on failure pages calls
 `grom_backend_power(GROM_POWER_SHUTDOWN)`. If power is unavailable, the UI stays
 in preboot. Retry cancels any live session and returns to the password prompt.
+The combined preboot renderer also listens for a physical `KEY_POWER` press
+and release. It sends the same shutdown request to PID 1 over a pipe. PID 1
+performs the power-off syscall. The native SDL preview has no power endpoint.
 
 Calls are synchronous and direct. `GROM_BACKEND_NO_MATCH` is a generic
 credential failure. `GROM_BACKEND_INVALID_INPUT`, `GROM_BACKEND_RETRYABLE_ERROR`,
 `GROM_BACKEND_FATAL_ERROR` and `GROM_BACKEND_UNAVAILABLE` are distinct API
 results, but the current frontend does not display their internals. The linked
-stub returns `GROM_BACKEND_NO_MATCH` for authentication,
-`GROM_BACKEND_UNAVAILABLE` for other active operations, and unknown charge
+scaffold returns `GROM_BACKEND_NO_MATCH` for authentication,
+`GROM_BACKEND_UNAVAILABLE` for storage and provisioning operations, and unknown charge
 status. Its cancellation functions are no-ops because it creates no sessions.

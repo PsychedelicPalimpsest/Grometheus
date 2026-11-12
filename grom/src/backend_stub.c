@@ -1,8 +1,16 @@
 #include "grom_backend.h"
+#include "power_request.h"
 
 #include <string.h>
+#include <unistd.h>
 
-/* This is the only linked backend today. It performs no privileged action. */
+/* All credential and storage operations remain inert. Power requests are
+ * forwarded to preboot PID 1; the native preview has no request endpoint. */
+static int power_fd = -1;
+
+void grom_backend_set_power_fd(int fd) {
+    power_fd = fd;
+}
 grom_backend_result grom_backend_authenticate(const uint8_t *secret,
                                               size_t length,
                                               grom_auth_matches *out) {
@@ -69,6 +77,10 @@ grom_backend_result grom_backend_charge_status(grom_charge_status *out) {
 }
 
 grom_backend_result grom_backend_power(grom_power_action action) {
-    (void)action;
-    return GROM_BACKEND_UNAVAILABLE;
+    if(action != GROM_POWER_REBOOT && action != GROM_POWER_SHUTDOWN)
+        return GROM_BACKEND_INVALID_INPUT;
+    if(power_fd < 0) return GROM_BACKEND_UNAVAILABLE;
+    char request = action == GROM_POWER_SHUTDOWN ? 'S' : 'R';
+    return write(power_fd, &request, 1) == 1 ? GROM_BACKEND_OK :
+                                               GROM_BACKEND_RETRYABLE_ERROR;
 }

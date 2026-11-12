@@ -50,8 +50,9 @@ typedef enum {
     GROM_POWER_SHUTDOWN
 } grom_power_action;
 
-/* One backend, with direct calls. The current linked implementation is an
- * inert scaffold. Input secrets are borrowed for one call; the caller erases
+/* One backend, with direct calls. Credential and storage operations currently
+ * use a scaffold; power requests in the combined build go to preboot PID 1.
+ * Input secrets are borrowed for one call; the caller erases
  * its copies afterward. Labels are borrowed until the next backend call.
  * Zero is never a valid session ID. Backend owns keys, ranges and sessions. */
 

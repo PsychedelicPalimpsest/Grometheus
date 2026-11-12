@@ -83,6 +83,14 @@ if(BUILD_TESTING)
     add_test(NAME touch-frames COMMAND test-touch)
     set_tests_properties(touch-frames PROPERTIES TIMEOUT 10)
 
+    add_executable(test-power-key tests/power_key.c ../grom/src/power_key.c
+                                  ../grom/src/backend_stub.c)
+    target_include_directories(test-power-key PRIVATE ../grom/src ../grom/include)
+    target_compile_options(test-power-key PRIVATE -Wall -Wextra -Werror -Wconversion -Wshadow -UNDEBUG)
+    target_link_options(test-power-key PRIVATE -static)
+    add_test(NAME power-key COMMAND test-power-key)
+    set_tests_properties(power-key PROPERTIES TIMEOUT 10)
+
     add_executable(test-formats tests/formats.c)
     target_include_directories(test-formats PRIVATE src third_party/drm)
     target_link_libraries(test-formats PRIVATE gromui)

@@ -26,6 +26,11 @@ taps now reach LVGL, and the user confirmed physical typing works on a
 temporary debug boot using firmware extracted from the phone's vendor
 partition. The opt-in USB ADB image was booted on the device and `adb shell id`
 returned root.
+The combined preboot renderer now listens for a physical `KEY_POWER` press
+and release and asks PID 1 to power off. This path has host test coverage and
+static build verification. An SDK emulator ACPI power-button test reached
+`reboot: Power down`. The Moto G Fast test image was flashed to `boot_a`, and
+the user confirmed that tapping the physical power button turns the phone off.
 Read `gromui/README.md` before working on
 that component; preserve its documented library and executable boundaries.
 

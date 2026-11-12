@@ -23,6 +23,9 @@
 #include "grom_ui_frontend.h"
 #include "debug_ui.h"
 #include "touch.h"
+#include "power_key.h"
+#include "power_request.h"
+#include "grom_backend.h"
 
 static int mounted_devtmpfs;
 static unsigned diagnostic_events;
@@ -400,7 +403,8 @@ static void update_touch_diagnostics(lv_obj_t *label, const grom_touch *touch) {
     lv_label_set_text(label, status);
 }
 
-int grom_test_ui_run(int ready_fd) {
+int grom_test_ui_run(int ready_fd, int power_fd) {
+    grom_backend_set_power_fd(power_fd);
     if (prepare_devices() < 0) {
         return 1;
     }
@@ -464,6 +468,9 @@ int grom_test_ui_run(int ready_fd) {
         gromui_close(backend);
         return 1;
     }
+    grom_power_key power_key;
+    grom_power_key_init(&power_key);
+    grom_power_key_scan(&power_key);
     lv_obj_t *diagnostics = NULL;
     if(access("/grom/touch-diagnostics", R_OK) == 0) {
         diagnostics = lv_label_create(lv_screen_active());
@@ -498,11 +505,15 @@ int grom_test_ui_run(int ready_fd) {
     uint32_t last_handler_ms = 0;
     for (;;) {
         grom_debug_ui_poll(&debug, indev, display, backend);
+        if(grom_power_key_poll(&power_key) &&
+           grom_backend_power(GROM_POWER_SHUTDOWN) != GROM_BACKEND_OK)
+            fprintf(stderr, "grom: power key shutdown request failed\n");
         lv_indev_read(indev);
-        if(touch.fd < 0 && (uint32_t)(tick_ms() - last_probe) >= 1000) {
+        if((uint32_t)(tick_ms() - last_probe) >= 1000) {
             last_probe = tick_ms();
             if(!mounted_devtmpfs) create_input_nodes();
-            (void)grom_touch_discover(&touch);
+            if(touch.fd < 0) (void)grom_touch_discover(&touch);
+            grom_power_key_scan(&power_key);
         }
         if(diagnostics && (uint32_t)(tick_ms() - last_diagnostic) >= 1000) {
             last_diagnostic = tick_ms();
@@ -535,6 +546,7 @@ int grom_test_ui_run(int ready_fd) {
     grom_ui_destroy(frontend);
     lv_indev_delete(indev);
     grom_debug_ui_stop(&debug);
+    grom_power_key_close(&power_key);
     grom_touch_close(&touch);
     lv_display_delete(display);
     lv_deinit();

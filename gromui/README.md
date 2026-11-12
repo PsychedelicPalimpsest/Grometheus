@@ -95,11 +95,14 @@ frontend has only password and charging entry calls; later screens are its own
 presentation state. Output labels are limited to authenticated matches or the
 current provisioning session. Credential buffers are held outside LVGL text
 areas and erased after a backend call. Calls are synchronous and direct; this
-refactor adds no IPC. The native SDL runner in `design/preview.c` and combined
-preboot test renderer use an inert backend stub that rejects unlock and reports
-other operations unavailable. They do not authenticate, provision, charge or
-boot anything. The combined renderer accepts touch from an already available
-Linux `/dev/input/event*` touchscreen. Its input layer lives in `grom/src/touch.c`,
+refactor adds no IPC for authentication. The native SDL runner in
+`design/preview.c` and combined preboot test renderer use a backend scaffold
+that rejects unlock and reports storage, provisioning and charger operations
+unavailable. The combined renderer sends power requests to its supervising
+PID 1; the SDL runner has no power endpoint. They do not authenticate,
+provision, charge or boot anything. The combined renderer accepts touch from
+an already available Linux `/dev/input/event*` touchscreen. Its input layer
+lives in `grom/src/touch.c`,
 outside the gromui display library. It discovers devices by capabilities, reads
 single-touch and both multitouch protocols, maps absolute axes to the display,
 and cancels a press after dropped events or device removal. Under a tmpfs `/dev`
@@ -118,9 +121,13 @@ The type-B reader initializes its current slot from the kernel and refreshes
 it after dropped-event resynchronization, so it can handle a first touch that
 does not repeat `ABS_MT_SLOT`.
 Device-specific coordinate transforms remain future work.
-Touch input reaches the outline UI, but the inert backend still rejects unlock
+Touch input reaches the outline UI, but the scaffold backend still rejects unlock
 and there is no production handoff. `GROMUI_SCREEN_SIZE` can test a portrait
 viewport in the SDK emulator.
+The combined renderer also scans evdev devices for `KEY_POWER`. A complete
+physical power-button press and release requests power-off through PID 1.
+Key repeats, a release without a preceding press, and dropped input frames
+cannot trigger shutdown. The listener rescans for hotplugged input devices.
 See [the backend call map](../docs/backend-ui-flows.md) for each flow.
 
 Build the native runner with `cmake -S design -B build-design -G Ninja`, then

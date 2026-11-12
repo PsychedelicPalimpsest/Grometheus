@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/reboot.h>
 #include <signal.h>
 #include <stdio.h>
 #include <sys/poll.h>
@@ -28,19 +29,27 @@ int grom_preboot_run(void) {
     grom_debug_adb_start();
     if (grom_drivers_load("/grom/drivers") < 0)
         fprintf(stderr, "grom: some staged drivers failed to load\n");
-    int ready[2];
+    int ready[2], power[2];
     if (syscall(SYS_pipe2, ready, O_CLOEXEC) < 0) {
+        return -1;
+    }
+    if (syscall(SYS_pipe2, power, O_CLOEXEC) < 0) {
+        close(ready[0]);
+        close(ready[1]);
         return -1;
     }
 
     pid_t child = fork();
     if (child == 0) {
         close(ready[0]);
-        _exit(grom_test_ui_run(ready[1]));
+        close(power[0]);
+        _exit(grom_test_ui_run(ready[1], power[1]));
     }
     close(ready[1]);
+    close(power[1]);
     if (child < 0) {
         close(ready[0]);
+        close(power[0]);
         return -1;
     }
 
@@ -62,12 +71,32 @@ int grom_preboot_run(void) {
             nanosleep(&delay, NULL);
         }
         close(ready[0]);
+        close(power[0]);
         return -1;
     }
     close(ready[0]);
 
-    /* Wait for renderer failure without a syscall every second. PID 1 only
-     * resumes MagiskInit after a real slot selection, which is not wired yet. */
+    /* The pipe closes on renderer failure, so this also supervises the child
+     * without polling wait4. Only PID 1 performs the power transition. */
+    struct pollfd request = {.fd = power[0], .events = POLLIN};
+    for (;;) {
+        int received = poll(&request, 1, -1);
+        if (received < 0 && errno == EINTR) continue;
+        if (received <= 0) break;
+        char action;
+        if (read(power[0], &action, 1) != 1) break;
+        int command;
+        if (action == 'S') command = LINUX_REBOOT_CMD_POWER_OFF;
+        else if (action == 'R') command = LINUX_REBOOT_CMD_RESTART;
+        else continue;
+        syscall(SYS_sync);
+        if (syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
+                    command, NULL) < 0)
+            fprintf(stderr, "grom: power request failed: errno %d\n", errno);
+    }
+    close(power[0]);
+    /* PID 1 only resumes MagiskInit after a real slot selection, which is not
+     * wired yet. */
     long result;
     do {
         result = syscall(SYS_wait4, child, NULL, 0, NULL);

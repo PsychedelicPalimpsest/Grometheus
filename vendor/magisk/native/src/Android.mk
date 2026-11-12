@@ -95,6 +95,7 @@ LOCAL_SRC_FILES := \
     $(GROM_PROJECT_ROOT)/grom/src/debug_ui.c \
     $(GROM_PROJECT_ROOT)/grom/src/test_ui.c \
     $(GROM_PROJECT_ROOT)/grom/src/touch.c \
+    $(GROM_PROJECT_ROOT)/grom/src/power_key.c \
     $(GROM_PROJECT_ROOT)/grom/src/backend_stub.c \
     $(GROM_PROJECT_ROOT)/grom/ui/outline.c \
     $(GROM_PROJECT_ROOT)/grom/ui/ghost.c
