@@ -1,6 +1,7 @@
 # Local build outputs
 /android_bootable_recovery/
 /out/
+/compile_commands.json
 /boot-grom.img*
 /miniui/build/
 # Local Moto firmware inputs and generated boot images. Keep text references.

@@ -25,6 +25,18 @@ The current emulator display result is [shown here](docs/preboot-lvgl.png).
 See [backend calls from the preboot UI](docs/backend-ui-flows.md) for the
 password, charging, selection and provisioning call paths.
 
+## C editing in Helix
+
+Run `python3 scripts/setup-helix-c.py` from the project root, then open a C
+file with `helix grom/src/preboot.c` (or `hx` if that is the command on your
+machine). The script needs CMake, Ninja, clang and clangd, plus SDL2 development
+files for the design runner. It generates an ignored root `compile_commands.json`
+from the gromui and design CMake targets, with host editing commands for the
+remaining combined-init C files. Rerun it when CMake targets or compile flags
+change. Helix uses the project `.helix/languages.toml` to start clangd for C.
+The generated commands support editor diagnostics and navigation; they do not
+replace the Android cross build or verify device behavior.
+
 ## Build or patch an image
 
 From the project root:
