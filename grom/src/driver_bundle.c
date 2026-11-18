@@ -3,6 +3,7 @@
 #define _GNU_SOURCE
 #endif
 #include "driver_bundle.h"
+#include "kmsg.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -70,7 +71,7 @@ int grom_drivers_load_with(const char *root, int (*load_module)(int)) {
         while (end < size && contents[end] != '\n') ++end;
         size_t length = end - start;
         if (end == size || length == 0 || length >= sizeof(name)) {
-            fprintf(stderr, "grom: malformed driver list\n");
+            grom_kmsg(GROM_LOG_ERROR, "malformed driver list");
             errors++;
             break;
         }
@@ -78,7 +79,7 @@ int grom_drivers_load_with(const char *root, int (*load_module)(int)) {
         name[length] = '\0';
         start = end + 1;
         if (++count > 64 || !safe_name(name)) {
-            fprintf(stderr, "grom: invalid driver name\n");
+            grom_kmsg(GROM_LOG_ERROR, "invalid driver name");
             errors++;
             break;
         }
@@ -90,7 +91,7 @@ int grom_drivers_load_with(const char *root, int (*load_module)(int)) {
         }
         int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0 || fstat(fd, &info) < 0 || !S_ISREG(info.st_mode)) {
-            fprintf(stderr, "grom: cannot open driver %s: %s\n", name,
+            grom_kmsg(GROM_LOG_ERROR, "cannot open driver %s: %s", name,
                     strerror(fd < 0 ? errno : EINVAL));
             if (fd >= 0) close(fd);
             errors++;
@@ -100,7 +101,7 @@ int grom_drivers_load_with(const char *root, int (*load_module)(int)) {
         int saved_errno = errno;
         close(fd);
         if (result < 0 && saved_errno != EEXIST) {
-            fprintf(stderr, "grom: driver %s: %s\n", name, strerror(saved_errno));
+            grom_kmsg(GROM_LOG_ERROR, "driver %s: %s", name, strerror(saved_errno));
             errors++;
         }
         /* The kernel retains its own loaded module. Delete only the ramdisk

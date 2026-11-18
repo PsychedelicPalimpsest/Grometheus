@@ -1,4 +1,5 @@
 #include "debug_adb.h"
+#include "kmsg.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -31,19 +32,20 @@ static void report_message(const char *message) {
     size_t n = strlen(message);
     int fd = open("/grom/adb-status", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd >= 0) { write(fd, message, n); close(fd); }
-    fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
-    if (fd >= 0) { write(fd, message, n); close(fd); }
 }
 
-static void report_detail(const char *what, const char *kind, int code) {
+static void report_detail(int priority, const char *what, const char *kind, int code) {
     char message[160];
     int n = snprintf(message, sizeof(message), "grom adb: %s (%s %d)\n",
                      what, kind, code);
-    if (n > 0 && n < (int)sizeof(message)) report_message(message);
+    if (n > 0 && n < (int)sizeof(message)) {
+        report_message(message);
+        grom_kmsg(priority, "adb: %s (%s %d)", what, kind, code);
+    }
 }
 
 static void report_status(const char *what, int code) {
-    report_detail(what, "errno", code);
+    report_detail(GROM_LOG_ERROR, what, "errno", code);
 }
 
 static void log_error(const char *what) { report_status(what, errno); }
@@ -228,11 +230,11 @@ int grom_debug_adb_start(void) {
         int status = 0;
         if (syscall(SYS_wait4, child, &status, WNOHANG, NULL) == child) {
             if (WIFEXITED(status))
-                report_detail("adbd exited before opening ep0", "exit code", WEXITSTATUS(status));
+                report_detail(GROM_LOG_ERROR, "adbd exited before opening ep0", "exit code", WEXITSTATUS(status));
             else if (WIFSIGNALED(status))
-                report_detail("adbd exited before opening ep0", "signal", WTERMSIG(status));
+                report_detail(GROM_LOG_ERROR, "adbd exited before opening ep0", "signal", WTERMSIG(status));
             else
-                report_detail("adbd exited before opening ep0", "wait status", status);
+                report_detail(GROM_LOG_ERROR, "adbd exited before opening ep0", "wait status", status);
             return -1;
         }
         if (adbd_opened_ep0(child) && access("/grom/ffs-ready", R_OK) == 0) {
@@ -246,6 +248,6 @@ int grom_debug_adb_start(void) {
         log_error("bind USB gadget");
         return -1;
     }
-    report_status("USB ADB bound", 0);
+    report_detail(GROM_LOG_INFO, "USB ADB bound", "errno", 0);
     return 1;
 }

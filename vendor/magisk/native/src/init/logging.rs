@@ -12,6 +12,10 @@ use std::os::fd::{FromRawFd, IntoRawFd, RawFd};
 // SAFETY: magiskinit is single threaded
 static mut KMSG: RawFd = -1;
 
+unsafe extern "C" {
+    fn grom_kmsg_set_fd(fd: libc::c_int);
+}
+
 pub fn setup_klog() {
     unsafe {
         // Shut down first 3 fds
@@ -43,6 +47,9 @@ pub fn setup_klog() {
             cstr!("/kmsg").remove().ok();
         }
         KMSG = fd.map(|fd| fd.into_raw_fd()).unwrap_or(-1);
+        // grom borrows this descriptor, including when MagiskInit had to
+        // create a temporary /kmsg node because /dev/kmsg was unavailable.
+        grom_kmsg_set_fd(KMSG);
     }
 
     // Disable kmsg rate limiting

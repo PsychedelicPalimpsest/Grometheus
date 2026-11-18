@@ -2,33 +2,28 @@
 #include "test_ui.h"
 #include "driver_bundle.h"
 #include "debug_adb.h"
+#include "kmsg.h"
+#include "disk.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/reboot.h>
 #include <signal.h>
-#include <stdio.h>
 #include <sys/poll.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
-int grom_preboot_run(void) {
+int grom_preboot_run() {
+
     /* Credential input, charger policy and slot mapping are not implemented.
      * Never hand off an unselected raw pool to MagiskInit or stock init. */
     /* Modules are global kernel state. Load before forking the renderer, and
      * remove only the copied ramdisk files after each insertion attempt. */
-    if (access("/grom/debug-adb", R_OK) == 0) {
-        int kmsg = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
-        if (kmsg >= 0) {
-            syscall(SYS_dup3, kmsg, STDERR_FILENO, 0);
-            close(kmsg);
-        }
-    }
     grom_debug_adb_start();
     if (grom_drivers_load("/grom/drivers") < 0)
-        fprintf(stderr, "grom: some staged drivers failed to load\n");
+        grom_kmsg(GROM_LOG_ERROR, "some staged drivers failed to load");
     int ready[2], power[2];
     if (syscall(SYS_pipe2, ready, O_CLOEXEC) < 0) {
         return -1;
@@ -38,6 +33,10 @@ int grom_preboot_run(void) {
         close(ready[1]);
         return -1;
     }
+
+    if (!grom_create_userdata())
+        grom_kmsg(GROM_LOG_INFO, "Userdata mounted to /dev/userdata");
+    
 
     pid_t child = fork();
     if (child == 0) {
@@ -92,7 +91,7 @@ int grom_preboot_run(void) {
         syscall(SYS_sync);
         if (syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
                     command, NULL) < 0)
-            fprintf(stderr, "grom: power request failed: errno %d\n", errno);
+            grom_kmsg(GROM_LOG_ERROR, "power request failed: errno %d", errno);
     }
     close(power[0]);
     /* PID 1 only resumes MagiskInit after a real slot selection, which is not

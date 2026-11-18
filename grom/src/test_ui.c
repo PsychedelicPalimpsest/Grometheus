@@ -26,6 +26,7 @@
 #include "power_key.h"
 #include "power_request.h"
 #include "grom_backend.h"
+#include "kmsg.h"
 
 static int mounted_devtmpfs;
 static unsigned diagnostic_events;
@@ -507,7 +508,7 @@ int grom_test_ui_run(int ready_fd, int power_fd) {
         grom_debug_ui_poll(&debug, indev, display, backend);
         if(grom_power_key_poll(&power_key) &&
            grom_backend_power(GROM_POWER_SHUTDOWN) != GROM_BACKEND_OK)
-            fprintf(stderr, "grom: power key shutdown request failed\n");
+            grom_kmsg(GROM_LOG_ERROR, "power key shutdown request failed");
         lv_indev_read(indev);
         if((uint32_t)(tick_ms() - last_probe) >= 1000) {
             last_probe = tick_ms();

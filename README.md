@@ -24,6 +24,9 @@ state. The test screen accepts touch input, but its backend rejects unlock.
 The current emulator display result is [shown here](docs/preboot-lvgl.png).
 See [backend calls from the preboot UI](docs/backend-ui-flows.md) for the
 password, charging, selection and provisioning call paths.
+Preboot grom messages use MagiskInit's open kernel log descriptor with a
+`grom:` prefix. Logging is best effort and never includes
+credentials, decrypted metadata, or slot allocation details.
 
 ## C editing in Helix
 

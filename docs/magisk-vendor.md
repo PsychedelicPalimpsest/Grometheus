@@ -10,9 +10,10 @@ toolchains still need setup.
 
 Fork changes:
 
-1. `native/src/init/init.rs` calls `grom_preboot_run()` after basic `/proc` and
-   `/sys` setup but before `BootConfig::init()` and Magisk's first-stage path.
-   It bypasses the hook for the `selinux_setup` second-stage re-entry.
+1. `native/src/init/init.rs` initializes `BootConfig` after basic `/proc` and
+   `/sys` setup, then passes a read-only snapshot to `grom_preboot_run()` before
+   Magisk's first-stage path. It bypasses the hook for the `selinux_setup`
+   second-stage re-entry.
 2. `native/src/Android.mk` builds `grom/`, the `gromui/` display backend, its
    LVGL adapter and pinned LVGL source as static libraries linked into the
    existing `magiskinit` executable. No wrapper executable is used.
@@ -25,6 +26,12 @@ switching, policy handling and handoff remain upstream code. The hook position
 is based on the pinned Magisk source, not yet verified against the emulator's or Moto
 G Fast's actual boot-stage fstab consumers. Charger behavior and a safe boot
 handoff require target-specific validation before this binary can be used.
+
+The hook's `grom_magisk_boot_config` argument is defined in
+`grom/include/grom_preboot.h`. For example, `config->force_normal_boot` is the
+value Magisk parsed from the boot properties. The snapshot includes the other
+scalar and fixed-size string fields, plus borrowed partition-map entries.
+It remains valid while the hook runs; grom must copy any data needed later.
 
 ## Verification (2026-11-11)
 

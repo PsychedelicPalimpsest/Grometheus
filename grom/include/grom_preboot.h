@@ -1,13 +1,14 @@
 #ifndef GROM_PREBOOT_H
 #define GROM_PREBOOT_H
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Called only by first-stage MagiskInit as PID 1. Return 0 only after a slot's
- * storage setup is complete. Any other result must halt before stock init. */
-int grom_preboot_run(void);
+int grom_preboot_run();
 
 #ifdef __cplusplus
 }
