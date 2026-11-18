@@ -1,3 +1,4 @@
+#include "disk.h"
 #include "kmsg.h"
 
 #include <string.h>
@@ -11,6 +12,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include "monocypher.h"
 
 
 static int parse_int(const char* str, size_t strc) {
@@ -35,10 +37,37 @@ static int parse_int(const char* str, size_t strc) {
     return value * sign;
 }
 
+static int read_all(int fd, void* out, size_t amount) {
+    for (size_t i = 0; i < amount;) {
+        ssize_t red = read(fd, out+i, amount-i);
+        if (red==-1 && errno == EINTR) {errno=0; continue;}
+        if (red==-1) return -1;
+        if (red==0) return i;
+
+        i += red;
+    }
+    return 0;
+}
+
+static int write_all(int fd, void* buff, size_t amount) {
+    for (size_t i = 0; i < amount;) {
+        ssize_t written = write(fd, buff+i, amount-i);
+        if (written==-1 && errno == EINTR) {errno=0; continue;}
+        if (written==-1) return -1;
+        if (written==0) return i;
+
+        i += written;
+    }
+    return 0;
+}
+
 static void search_uevent(const char* uevent, size_t ueventc, const char* key, char const** value, size_t* vlen) {
     size_t klen = strlen(key);
     for (size_t i = 0; i < ueventc;) {
-        if (i + klen < ueventc && 0 == strncmp(key, uevent + i, klen) && uevent[i + klen] == '=') {
+        if (i + klen < ueventc
+            && 0 == strncmp(key, uevent + i, klen)
+            && uevent[i + klen] == '=') {
+            
             i += klen + 1;
             size_t starti = i;
             *value = uevent + i;
@@ -53,6 +82,7 @@ static void search_uevent(const char* uevent, size_t ueventc, const char* key, c
     *value = NULL;
     *vlen = 0;
 }
+
 
 int search_device(const char* key, const char* value, int* major, int* minor) {
     DIR* blockdir = opendir("/sys/dev/block");
@@ -77,7 +107,8 @@ int search_device(const char* key, const char* value, int* major, int* minor) {
         int fd = open(path, 0);
         if (-1 == fd) goto path_err;
         
-        size_t ueventc = read(fd, uevent, sizeof(uevent)-1);
+        size_t ueventc = read_all(fd, uevent, sizeof(uevent)-1);
+        
         uevent[ueventc] = '\0';
         close(fd);
 
@@ -137,3 +168,77 @@ int grom_create_userdata() {
     return 0;
     
 }
+
+
+// TODO: Find the highest numbers that 'feel' right on a phone and/or make a config option
+const crypto_argon2_config grom_argoncfg = {
+        .algorithm = CRYPTO_ARGON2_ID, /* Argon2id variant */
+        .nb_blocks = 65536,            /* 65536 * 1024 bytes = 64 MiB */
+        .nb_passes = 3,                /* 3 iterations (minimum recommended) */
+        .nb_lanes  = 1                 /* Monocypher is single-threaded */
+    };
+
+int grom_hash(const char *password, const uint8_t salt[16], uint8_t out_key[32])
+{
+    size_t work_area_size = (size_t)grom_argoncfg.nb_blocks * 1024;
+    void *work_area = malloc(work_area_size);
+    if (!work_area) {
+        grom_kmsg(GROM_LOG_ERROR, "Cannot allocate data for hash work area!");
+        return 1;
+    }
+
+    size_t pass_len = strlen(password);
+    crypto_argon2_inputs inputs = {
+        .pass      = (const uint8_t *)password,
+        .salt      = salt,
+        .pass_size = (uint32_t)pass_len,
+        .salt_size = 16
+    };
+
+    crypto_argon2(out_key, 32, work_area, grom_argoncfg, inputs, crypto_argon2_no_extras);
+
+    free(work_area);
+    return 0;
+}
+
+
+int grom_format_gcrypt(const char* block_device, const char* admin_password, uint16_t slot_count) {
+    struct grom_userdata user_data = {
+        .disk_version_major = GROM_MAJOR,
+        .disk_version_minor = GROM_MINOR,
+        .slot_count = slot_count,
+    };
+    
+    memcpy(&user_data.__magic, GROM_MAGIC, sizeof(GROM_MAGIC));
+    int rand_fd = open("/dev/urandom", 0);
+    if (rand_fd == -1) {
+        grom_kmsg(GROM_LOG_ERROR, "Cannot open urandom!");
+        return 1;
+    }
+    read_all(rand_fd, user_data.admin_password_salt, sizeof(user_data.admin_password_salt));
+    close(rand_fd);
+
+    if (!grom_hash(admin_password, user_data.admin_password_salt, user_data.admin_password_hash))
+        return 1;
+
+    uint8_t grom_data[4096] = {0};
+    memcpy(grom_data, &user_data, sizeof(struct grom_userdata));
+    
+    
+
+
+    int fd = open(block_device, O_WRONLY | O_SYNC);
+    if (-1 == fd) {
+        grom_kmsg(GROM_LOG_ERROR, "Cannot open the device %s for formatting!", block_device);
+        return 1;
+    }
+
+    write_all(fd, grom_data, sizeof(grom_data));
+    close(fd);
+    
+        
+    return 0;
+}
+
+
+
