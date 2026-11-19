@@ -1,3 +1,4 @@
+#include <sys/syscall.h>
 #include <unistd.h>
 
 int strncmp( const char* lhs, const char* rhs, size_t count ) {
@@ -10,4 +11,6 @@ int strncmp( const char* lhs, const char* rhs, size_t count ) {
 }
 
 
-
+ssize_t getrandom(void *buf, size_t size, unsigned int flags) {
+    return syscall(SYS_getrandom, buf, size, flags);
+}

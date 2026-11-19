@@ -13,8 +13,13 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <endian.h>
-#include "monocypher.h"
+#include <sys/mman.h>
 
+
+ssize_t getrandom(void* buf, size_t size, unsigned int flags);
+
+#include "monocypher.h"
+#include <monocypher-ed25519.h>
 
 static const char GROM_MAGIC[9] = "GromCrypt";
 
@@ -57,6 +62,21 @@ static int parse_device_number(const char *str, size_t length) {
 __do_all(read)  // read_all(fd, out, amount)
 __do_all(write) // write_all(fd, out, amount)
 
+static ssize_t getrandom_all(uint8_t *out, size_t amount) {
+    size_t offset = 0;
+    while (offset < amount) {
+        ssize_t count = getrandom(out + offset, amount - offset, 0);
+        if (count < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        if (count == 0)
+            break;
+        offset += (size_t)count;
+    }
+    return (ssize_t)offset;
+}
 
 
 static void search_uevent(const char* uevent, size_t ueventc, const char* key, char const** value, size_t* vlen) {
@@ -220,20 +240,16 @@ int grypt_create_header(uint8_t sector[4096], const char* admin_password, uint16
     };
     
     memcpy(&user_data.__magic, GROM_MAGIC, sizeof(GROM_MAGIC));
-    int rand_fd = open("/dev/urandom", O_RDONLY);
-    if (rand_fd == -1) {
-        grom_error("Cannot open urandom!");
-        return 1;
-    }
-    size_t salt_size = sizeof(user_data.admin_password_salt);
-    ssize_t count = read_all(rand_fd, user_data.admin_password_salt, salt_size);
-    close(rand_fd);
+
+    size_t salt_size = sizeof(user_data.disk_salt);
+    ssize_t count = getrandom_all(user_data.disk_salt, salt_size);
+
     if (count != (ssize_t)salt_size) {
         grom_error("Could not read the full admin password salt");
         return 1;
     }
 
-    if (grom_hash(admin_password, user_data.admin_password_salt, user_data.admin_password_hash))
+    if (grom_hash(admin_password, user_data.disk_salt, user_data.admin_password_hash))
         return 1;
 
     memcpy(sector, &user_data, sizeof(user_data));
@@ -250,11 +266,6 @@ int gcrypt_format(const char* block_device, const char* admin_password, uint16_t
     }
 
     int result = 1;
-    int rand_fd = open("/dev/urandom", O_RDONLY);
-    if (rand_fd == -1) {
-        grom_error("Cannot open urandom!");
-        goto cleanup;
-    }
 
     if (grypt_create_header(sector, admin_password, slot_count))
         goto cleanup;
@@ -264,7 +275,7 @@ int gcrypt_format(const char* block_device, const char* admin_password, uint16_t
     }
 
     for (int i = 0; i < slot_count; i++) {
-        if (read_all(rand_fd, sector, sizeof(sector)) != (ssize_t)sizeof(sector) ||
+        if (getrandom_all(sector, sizeof(sector)) != (ssize_t)sizeof(sector) ||
             write_all(fd, sector, sizeof(sector)) != (ssize_t)sizeof(sector)) {
             grom_error("Slot randomization failed!");
             goto cleanup;
@@ -273,8 +284,6 @@ int gcrypt_format(const char* block_device, const char* admin_password, uint16_t
     result = 0;
 
 cleanup:
-    if (rand_fd >= 0)
-        close(rand_fd);
     if (close(fd) != 0 && result == 0) {
         grom_error("Could not close the formatted device");
         return 1;
@@ -303,10 +312,77 @@ int gcrypt_load_header(int fd, struct grom_userdata* data) {
     return 0;
 }
 
+
+int gcrypt_decrypt_slots(const int fd, const struct grom_userdata* data, const char* password, struct grom_slot_payload*** payloads, size_t* payloadc) {
+    uint8_t pre_key[32+32], key[64];
+
+    int ret = 0;
+    *payloadc = 0;
+
+    struct grom_slot_payload* current_payload = malloc(SLOT_PAYLOAD_SIZE);
+    if (!current_payload) {grom_error("OOM in slot payload allocation"); return 1;}
+
+    
+    // Load slots into ram
+    struct grom_on_disk_keyslot* slots = mmap(
+        NULL,
+        data->slot_count * 4096,
+        PROT_READ,
+        MAP_PRIVATE | MAP_POPULATE,
+        fd,
+        4096 // Right after header
+    );
+
+    if (slots == MAP_FAILED) {
+        grom_error("Failed to map in slot data");
+        return 1;
+    }
+
+    grom_hash(password, data->disk_salt, pre_key);
+    
+
+    for (int i = 0; i < data->slot_count; i++) {
+        crypto_sha512(key, pre_key, sizeof(pre_key));
+
+        // Returns zero on success
+        if (0 != crypto_aead_unlock(
+            (uint8_t*) current_payload,
+            slots[i].mac,
+            key,
+            slots[i].nonce,
+            NULL, 0, // No additional info
+            slots[i].ciphertext, sizeof(slots[i].ciphertext)
+        )) continue;
+
+        // For the sake of speed, assume slot collisions are uncommon (this code only runs once, so realloc acts like malloc)
+        *payloads = realloc(*payloads, (*payloadc + 1) * sizeof(void*));
+
+        if (!*payloads) {ret=1; grom_error("OOM in slot payload list allocation"); goto cleanup;}
+        
+        (*payloads)[(*payloadc)++] = current_payload;
+        current_payload = malloc(SLOT_PAYLOAD_SIZE);
+
+        if (!current_payload) {ret=1; grom_error("OOM in slot payload allocation"); goto cleanup;}
+        
+    }
+
+    
+cleanup:
+    // Both of these may have secrets
+    crypto_wipe(pre_key, sizeof(pre_key));
+    crypto_wipe(key, sizeof(key));
+    free(current_payload);
+   
+    munmap(slots, data->slot_count * 4096);
+    return ret;
+}
+
+
+
 // Return true of the admin password was verified, 0 if not, -1 on error
 int gcrypt_verify_password(struct grom_userdata* data, const char* admin_password) {
     uint8_t test_hash[32];
-    if (grom_hash(admin_password, data->admin_password_salt, test_hash)) {
+    if (grom_hash(admin_password, data->disk_salt, test_hash)) {
         grom_error("Error hashing the admin password");
         return -1;
     }

@@ -33,17 +33,21 @@ target_compile_options(grom-interaction-test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME grom-interaction COMMAND grom-interaction-test)
 
 set(MONOCYPHER_SRC ${PROJECT_SOURCE_DIR}/vendor/monocypher/src)
-add_executable(test-disk disk_test.c ../src/disk.c stderr_log.c ${MONOCYPHER_SRC}/monocypher.c)
-target_include_directories(test-disk PRIVATE ../src ${MONOCYPHER_SRC})
+add_executable(test-disk
+    disk_test.c ../src/disk.c stderr_log.c
+    ${MONOCYPHER_SRC}/monocypher.c
+    ${MONOCYPHER_SRC}/optional/monocypher-ed25519.c)
+target_include_directories(test-disk PRIVATE
+    ../src ${MONOCYPHER_SRC} ${MONOCYPHER_SRC}/optional)
 target_compile_features(test-disk PRIVATE c_std_11)
 target_compile_options(test-disk PRIVATE -UNDEBUG)
 target_link_options(test-disk PRIVATE
     -Wl,--wrap=open -Wl,--wrap=opendir -Wl,--wrap=mknod
-    -Wl,--wrap=read -Wl,--wrap=write -Wl,--wrap=malloc)
+    -Wl,--wrap=read -Wl,--wrap=write -Wl,--wrap=malloc -Wl,--wrap=getrandom)
 foreach(disk_case IN ITEMS lookup lookup-open-error lookup-invalid-numbers
         lookup-overflow lookup-read-error hash-and-verify load invalid-header
         header-create header-hash-error header-entropy-error format format-open-error
-        format-header-write format-slots format-slot-eof)
+        format-header-write format-slots format-slot-entropy-error)
     add_test(NAME disk-${disk_case} COMMAND test-disk ${disk_case})
     set_tests_properties(disk-${disk_case} PROPERTIES TIMEOUT 10)
 endforeach()

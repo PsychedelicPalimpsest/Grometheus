@@ -36,7 +36,7 @@ int grom_preboot_run() {
 
     if (!grom_create_userdata())
         grom_kmsg(GROM_LOG_INFO, "Userdata mounted to /dev/userdata");
-    
+
 
     pid_t child = fork();
     if (child == 0) {

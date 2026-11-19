@@ -47,18 +47,19 @@ static const uint8_t expected_hash[32] = {
 
 static char fixture[] = "/tmp/grom-disk-test-XXXXXX";
 static char image_path[128];
-static char salt_path[128];
-static char random_path[128];
 static char event_path[128];
 static char device_path[128];
 
+static uint8_t entropy[sizeof(salt) + SLOT_COUNT * SECTOR_SIZE];
+static size_t entropy_size, entropy_offset, entropy_chunk_size;
+static unsigned entropy_calls, fail_entropy_call, entropy_interrupts;
 static int failures;
-static int image_fd = -1, slot_random_fd = -1, event_fd = -1, header_random_fd = -1;
+static int image_fd = -1, event_fd = -1;
 static int read_fault_fd = -1;
-static bool directory_error, event_read_error, entropy_read_error, fail_hash_allocation;
+static bool directory_error, event_read_error, fail_hash_allocation;
 static bool header_read_error;
-static unsigned entropy_opens, fail_entropy_open, hash_allocations;
-static unsigned node_calls, image_writes, slot_reads, read_interrupts;
+static unsigned hash_allocations;
+static unsigned node_calls, image_writes, slot_entropy_calls, read_interrupts;
 static size_t read_limit;
 static enum write_fault write_fault;
 static int node_error;
@@ -96,19 +97,6 @@ int __wrap_open(const char *path, int flags, ...) {
         return image_fd;
     }
     assert(flags == O_RDONLY);
-    if (strcmp(path, "/dev/urandom") == 0) {
-        if (++entropy_opens == fail_entropy_open) {
-            errno = EACCES;
-            return -1;
-        }
-        if (image_fd >= 0 && entropy_opens == 1) {
-            slot_random_fd = __real_open(random_path, flags);
-            return slot_random_fd;
-        }
-        header_random_fd = __real_open(salt_path, flags);
-        return header_random_fd;
-    }
-
     const char prefix[] = "/sys/dev/block/";
     assert(strncmp(path, prefix, sizeof(prefix) - 1) == 0);
     char local[128];
@@ -129,12 +117,32 @@ int __wrap_mknod(const char *path, mode_t mode, dev_t device) {
     return 0;
 }
 
+ssize_t __wrap_getrandom(void *buffer, size_t size, unsigned int flags) {
+    assert(flags == 0);
+    assert(entropy_offset <= entropy_size);
+    if (entropy_offset >= sizeof(salt))
+        ++slot_entropy_calls;
+    if (++entropy_calls == fail_entropy_call) {
+        errno = EIO;
+        return -1;
+    }
+    if (entropy_interrupts) {
+        --entropy_interrupts;
+        errno = EINTR;
+        return -1;
+    }
+    if (size > entropy_size - entropy_offset)
+        size = entropy_size - entropy_offset;
+    if (size > entropy_chunk_size)
+        size = entropy_chunk_size;
+    memcpy(buffer, entropy + entropy_offset, size);
+    entropy_offset += size;
+    return (ssize_t)size;
+}
+
 ssize_t __wrap_read(int fd, void *buffer, size_t size) {
-    if (fd == slot_random_fd)
-        ++slot_reads;
     if ((event_read_error && fd == event_fd) ||
-        (header_read_error && fd == read_fault_fd) ||
-        (entropy_read_error && fd == header_random_fd)) {
+        (header_read_error && fd == read_fault_fd)) {
         errno = EIO;
         return -1;
     }
@@ -333,17 +341,17 @@ static void test_invalid_header(void) {
 }
 
 static void test_header_create(void) {
-    write_fixture(salt_path, salt, sizeof(salt));
+    entropy_interrupts = 1;
+    entropy_chunk_size = 7;
     uint8_t sector[SECTOR_SIZE] = {0}, expected[sizeof(struct grom_userdata)];
     make_header(expected, 0x0102);
     expect(grypt_create_header(sector, password, 0x0102) == 0,
-           "return success after deriving a valid header");
+           "create a header after interrupted and short entropy reads");
     expect(memcmp(sector, expected, sizeof(expected)) == 0,
            "serialize magic, version, little-endian slot count, salt and verifier");
 }
 
 static void test_header_hash_error(void) {
-    write_fixture(salt_path, salt, sizeof(salt));
     uint8_t before[SECTOR_SIZE], sector[SECTOR_SIZE];
     memset(before, 0xa5, sizeof(before));
     memcpy(sector, before, sizeof(sector));
@@ -354,45 +362,30 @@ static void test_header_hash_error(void) {
 
 static void test_header_entropy_error(void) {
     uint8_t sector[SECTOR_SIZE] = {0};
-    fail_entropy_open = 1;
+    fail_entropy_call = 1;
     expect(grypt_create_header(sector, password, SLOT_COUNT) != 0 && hash_allocations == 0,
-           "reject a failed urandom open before hashing");
+           "reject a salt entropy error before hashing");
 
-    write_fixture(salt_path, salt, sizeof(salt) - 1);
-    expect(grypt_create_header(sector, password, SLOT_COUNT) != 0, "reject a short salt read");
+    entropy_size = sizeof(salt) - 1;
+    expect(grypt_create_header(sector, password, SLOT_COUNT) != 0,
+           "reject a partial salt followed by zero progress");
     expect(hash_allocations == 0, "do not hash with an incomplete salt");
-
-    unsigned before = hash_allocations;
-    entropy_read_error = true;
-    expect(grypt_create_header(sector, password, SLOT_COUNT) != 0, "reject a salt read error");
-    expect(hash_allocations == before, "do not hash after a salt read error");
 }
 
 static void prepare_image(void) {
-    uint8_t before[IMAGE_SIZE], entropy[SLOT_COUNT * SECTOR_SIZE];
+    uint8_t before[IMAGE_SIZE];
     memset(before, 0xa5, sizeof(before));
-    memset(entropy, 0x3c, SECTOR_SIZE);
-    memset(entropy + SECTOR_SIZE, 0x71, SECTOR_SIZE);
     write_fixture(image_path, before, sizeof(before));
-    write_fixture(random_path, entropy, sizeof(entropy));
-    write_fixture(salt_path, salt, sizeof(salt));
-}
-
-static void check_format_fds(void) {
-    expect(fd_is_closed(image_fd), "close the image descriptor");
-    expect(fd_is_closed(slot_random_fd), "close the slot entropy descriptor");
-    expect(fd_is_closed(header_random_fd), "close the header entropy descriptor");
 }
 
 static void reset_format_io(void) {
     if (!fd_is_closed(image_fd))
         assert(close(image_fd) == 0);
-    if (!fd_is_closed(slot_random_fd))
-        assert(close(slot_random_fd) == 0);
-    if (!fd_is_closed(header_random_fd))
-        assert(close(header_random_fd) == 0);
-    image_fd = slot_random_fd = header_random_fd = -1;
-    entropy_opens = image_writes = slot_reads = 0;
+    image_fd = -1;
+    entropy_calls = fail_entropy_call = entropy_interrupts = 0;
+    image_writes = slot_entropy_calls = 0;
+    entropy_offset = 0;
+    entropy_size = entropy_chunk_size = sizeof(entropy);
 }
 
 static void read_image(uint8_t image[IMAGE_SIZE]) {
@@ -408,7 +401,7 @@ static void test_format(void) {
     uint8_t image[IMAGE_SIZE], header[SECTOR_SIZE] = {0};
     prepare_image();
     expect(gcrypt_format(image_path, password, SLOT_COUNT) == 0, "format the disposable image");
-    check_format_fds();
+    expect(fd_is_closed(image_fd), "close the image descriptor");
     read_image(image);
     make_header(header, SLOT_COUNT);
     expect(memcmp(image, header, sizeof(header)) == 0, "write the full padded header");
@@ -417,53 +410,49 @@ static void test_format(void) {
 
 static void test_format_open_error(void) {
     expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "reject failure to open the image");
-    expect(entropy_opens == 0, "leave entropy unopened when the image open fails");
+    expect(entropy_calls == 0, "skip entropy requests when the image open fails");
     reset_format_io();
 
     prepare_image();
-    fail_entropy_open = 1;
-    expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "reject the first urandom open failure");
-    check_format_fds();
-
-    reset_format_io();
-    fail_entropy_open = 2;
-    expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "reject the second urandom open failure");
-    check_format_fds();
+    fail_entropy_call = 1;
+    expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "report a header entropy error");
+    expect(image_writes == 0, "leave the image untouched when header entropy fails");
+    expect(fd_is_closed(image_fd), "close the image descriptor");
 }
 
 static void test_format_header_write(void) {
     prepare_image();
 
-    (void)gcrypt_format(image_path, password, SLOT_COUNT);
-    expect(image_writes > 0 && slot_reads > 0, "continue to slots after a complete header write");
-    check_format_fds();
+    expect(gcrypt_format(image_path, password, SLOT_COUNT) == 0,
+           "continue to slots after a complete header write");
+    expect(fd_is_closed(image_fd), "close the image descriptor");
 
     reset_format_io();
     write_fault = WRITE_ERROR;
     expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "report a header write returning EIO");
-    expect(image_writes == 1 && slot_reads == 0, "stop after the failing header write");
-    check_format_fds();
+    expect(image_writes == 1 && slot_entropy_calls == 0, "stop after the failing header write");
+    expect(fd_is_closed(image_fd), "close the image descriptor");
 
     reset_format_io();
     write_fault = WRITE_SHORT;
     expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "report a partial header write");
-    expect(image_writes == 2 && slot_reads == 0, "stop when the partial header write stalls");
-    check_format_fds();
+    expect(image_writes == 2 && slot_entropy_calls == 0, "stop when the partial header write stalls");
+    expect(fd_is_closed(image_fd), "close the image descriptor");
 
     reset_format_io();
     write_fault = WRITE_ZERO_HEADER;
     expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "report zero progress writing the header");
-    expect(image_writes == 1 && slot_reads == 0, "stop after the zero-progress header write");
-    check_format_fds();
+    expect(image_writes == 1 && slot_entropy_calls == 0, "stop after the zero-progress header write");
+    expect(fd_is_closed(image_fd), "close the image descriptor");
 }
 
 static void test_format_slots(void) {
     uint8_t image[IMAGE_SIZE], expected[SLOT_COUNT * SECTOR_SIZE];
     prepare_image();
     expect(gcrypt_format(image_path, password, SLOT_COUNT) == 0, "accept full slot entropy reads and writes");
-    expect(slot_reads == SLOT_COUNT && image_writes == 1 + SLOT_COUNT,
+    expect(slot_entropy_calls == SLOT_COUNT && image_writes == 1 + SLOT_COUNT,
            "attempt both slot writes after reading their entropy");
-    check_format_fds();
+    expect(fd_is_closed(image_fd), "close the image descriptor");
     read_image(image);
     memset(expected, 0x3c, SECTOR_SIZE);
     memset(expected + SECTOR_SIZE, 0x71, SECTOR_SIZE);
@@ -472,19 +461,20 @@ static void test_format_slots(void) {
     expect(image[IMAGE_SIZE - 1] == 0xa5, "preserve the byte beyond the slot region");
 }
 
-static void test_format_slot_eof(void) {
+static void test_format_slot_entropy_error(void) {
     prepare_image();
-    write_fixture(random_path, "", 0);
-    expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "report EOF on slot entropy");
-    expect(slot_reads == 1, "stop on the first slot with missing entropy");
-    expect(image_writes == 1, "leave the slot untouched when its entropy read returns EOF");
-    check_format_fds();
+    fail_entropy_call = 2;
+    expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "report a slot entropy error");
+    expect(slot_entropy_calls == 1, "stop on the first slot with missing entropy");
+    expect(image_writes == 1, "leave the slot untouched when entropy fails");
+    expect(fd_is_closed(image_fd), "close the image descriptor");
 
     reset_format_io();
-    write_fixture(random_path, salt, sizeof(salt));
-    expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0, "report a short slot entropy read");
-    expect(image_writes == 1, "leave the slot untouched when its entropy read is short");
-    check_format_fds();
+    entropy_size = sizeof(salt) + 16;
+    expect(gcrypt_format(image_path, password, SLOT_COUNT) != 0,
+           "reject partial slot entropy followed by zero progress");
+    expect(image_writes == 1, "leave the slot untouched when entropy is incomplete");
+    expect(fd_is_closed(image_fd), "close the image descriptor");
 }
 
 int main(int argc, char **argv) {
@@ -507,7 +497,7 @@ int main(int argc, char **argv) {
         {"format-open-error", test_format_open_error},
         {"format-header-write", test_format_header_write},
         {"format-slots", test_format_slots},
-        {"format-slot-eof", test_format_slot_eof},
+        {"format-slot-entropy-error", test_format_slot_entropy_error},
     };
 
     assert(argc == 2);
@@ -516,17 +506,17 @@ int main(int argc, char **argv) {
             continue;
         assert(mkdtemp(fixture));
         fixture_path(image_path, "image");
-        fixture_path(salt_path, "salt");
-        fixture_path(random_path, "random");
         fixture_path(device_path, "179:2");
         fixture_path(event_path, "179:2/uevent");
+        memcpy(entropy, salt, sizeof(salt));
+        memset(entropy + sizeof(salt), 0x3c, SECTOR_SIZE);
+        memset(entropy + sizeof(salt) + SECTOR_SIZE, 0x71, SECTOR_SIZE);
+        reset_format_io();
         cases[i].run();
         reset_format_io();
         assert(unlink(event_path) == 0 || errno == ENOENT);
         assert(rmdir(device_path) == 0 || errno == ENOENT);
         assert(unlink(image_path) == 0 || errno == ENOENT);
-        assert(unlink(salt_path) == 0 || errno == ENOENT);
-        assert(unlink(random_path) == 0 || errno == ENOENT);
         assert(rmdir(fixture) == 0);
         return failures ? EXIT_FAILURE : EXIT_SUCCESS;
     }
