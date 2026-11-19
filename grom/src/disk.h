@@ -4,7 +4,7 @@
 
 
 #define GROM_MAJOR 0
-#define GROM_MINOR 0
+#define GROM_MINOR 1
 
 #define WIPE_LIST_MAX 64
 

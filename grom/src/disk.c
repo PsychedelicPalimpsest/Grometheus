@@ -40,35 +40,24 @@ static int parse_device_number(const char *str, size_t length) {
     return value;
 }
 
-static ssize_t read_all(int fd, void *out, size_t amount) {
-    uint8_t *buffer = out;
-    size_t offset = 0;
-    while (offset < amount) {
-        ssize_t count = read(fd, buffer + offset, amount - offset);
-        if (count < 0) {
-            if (errno == EINTR) continue;
-            return -1;
-        }
-        if (count == 0) break;
-        offset += (size_t)count;
-    }
-    return (ssize_t)offset;
-}
+#define __do_all(STYLE)                                                 \
+    static ssize_t STYLE##_all(int fd, void *out, size_t amount) {      \
+        size_t i = 0;                                                   \
+        while (i < amount) {                                            \
+            ssize_t count = STYLE(fd, out + i, amount - i);             \
+            if (count < 0) {                                            \
+                if (errno == EINTR) continue;                           \
+                return -1;                                              \
+            }                                                           \
+            if (count == 0) break;                                      \
+            i += (size_t) count;                                        \
+        }                                                               \
+        return (ssize_t) i;                                             \
+    }                                                                   
+__do_all(read)  // read_all(fd, out, amount)
+__do_all(write) // write_all(fd, out, amount)
 
-static ssize_t write_all(int fd, const void *data, size_t amount) {
-    const uint8_t *buffer = data;
-    size_t offset = 0;
-    while (offset < amount) {
-        ssize_t count = write(fd, buffer + offset, amount - offset);
-        if (count < 0) {
-            if (errno == EINTR) continue;
-            return -1;
-        }
-        if (count == 0) break;
-        offset += (size_t)count;
-    }
-    return (ssize_t)offset;
-}
+
 
 static void search_uevent(const char* uevent, size_t ueventc, const char* key, char const** value, size_t* vlen) {
     size_t klen = strlen(key);
@@ -144,10 +133,13 @@ int search_device(const char* key, const char* value, int* major, int* minor) {
             goto path_err;
         }
 
-        int major_number = parse_device_number(majorstr, majorc);
-        if (major_number < 0) goto path_err;
-        int minor_number = parse_device_number(minorstr, minorc);
-        if (minor_number < 0) goto path_err;
+        int major_number, minor_number;
+        
+        if (0 > (major_number = parse_device_number(majorstr, majorc)))
+            goto path_err;
+
+        if (0 > (minor_number = parse_device_number(minorstr, minorc)))
+            goto path_err;
 
         *major = major_number;
         *minor = minor_number;
