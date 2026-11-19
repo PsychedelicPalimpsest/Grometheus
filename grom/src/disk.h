@@ -61,6 +61,7 @@ struct grom_on_disk_keyslot {
 
 
 // This is the file format for the beginning of a grom formatted disk.
+// all numbers are little endian
 // Note: Nothing here should be important
 struct  grom_userdata  {
   char __magic[9]; // GROM_MAGIC

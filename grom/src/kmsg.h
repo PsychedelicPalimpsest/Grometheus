@@ -15,4 +15,9 @@ void grom_kmsg_set_fd(int fd);
 void grom_kmsg(int priority, const char *format, ...)
     __attribute__((format(printf, 2, 3)));
 
+
+#define grom_error(...) grom_kmsg(GROM_LOG_ERROR, __VA_ARGS__)
+#define grom_info(...) grom_kmsg(GROM_LOG_INFO, __VA_ARGS__)
+#define grom_debug(...) grom_kmsg(GROM_LOG_DEBUG, __VA_ARGS__)
+
 #endif

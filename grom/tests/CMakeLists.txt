@@ -38,10 +38,15 @@ target_include_directories(test-disk PRIVATE ../src ${MONOCYPHER_SRC})
 target_compile_features(test-disk PRIVATE c_std_11)
 target_compile_options(test-disk PRIVATE -UNDEBUG)
 target_link_options(test-disk PRIVATE
-    -Wl,--wrap=open -Wl,--wrap=opendir -Wl,--wrap=mknod -Wl,--wrap=crypto_argon2)
-add_test(NAME disk COMMAND test-disk)
-add_test(NAME disk-format COMMAND test-disk format)
-set_tests_properties(disk-format PROPERTIES SKIP_RETURN_CODE 77)
+    -Wl,--wrap=open -Wl,--wrap=opendir -Wl,--wrap=mknod
+    -Wl,--wrap=read -Wl,--wrap=write -Wl,--wrap=malloc)
+foreach(disk_case IN ITEMS lookup lookup-open-error lookup-invalid-numbers
+        lookup-overflow lookup-read-error hash-and-verify load invalid-header
+        header-create header-hash-error header-entropy-error format format-open-error
+        format-header-write format-slots format-slot-eof)
+    add_test(NAME disk-${disk_case} COMMAND test-disk ${disk_case})
+    set_tests_properties(disk-${disk_case} PROPERTIES TIMEOUT 10)
+endforeach()
 
 set_tests_properties(kmsg-borrowed-fd driver-bundle touch-frames power-key
-    touch-lvgl-cancel grom-interaction disk disk-format PROPERTIES TIMEOUT 10)
+    touch-lvgl-cancel grom-interaction PROPERTIES TIMEOUT 10)

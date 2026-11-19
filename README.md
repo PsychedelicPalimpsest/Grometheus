@@ -55,9 +55,8 @@ The suite includes the Python builder and ROM-dump checks in `tests/`, the
 display library checks in `gromui/tests/`, and the preboot and headless LVGL
 frontend checks in `grom/tests/`.
 Use `ctest --test-dir out/host-tests -R disk -V` to run the disk checks.
-They use synthetic device metadata and a temporary image. CTest reports
-`disk-format` as skipped while the formatter exits early after hashing. The
-test checks the header write if formatting succeeds.
+They use synthetic device metadata and temporary images to check header
+handling, password verification, slot initialization and I/O error paths.
 
 ## Build or patch an image
 
