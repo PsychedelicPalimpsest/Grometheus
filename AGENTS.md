@@ -244,6 +244,9 @@ it cannot undo a dump already taken.
   and failure paths. Report what the tests establish and what remains unknown.
 - Use disposable images for storage tests. Never write to real device storage
   merely to investigate behavior without explicit authorization for that work.
+- Run the full host suite using the root CMake and CTest workflow in `README.md`.
+  Keep preboot and frontend tests in `grom/tests` and display library tests in
+  `gromui/tests`.
 - For gromui changes, use its documented build/test workflow and required
   display evidence. Do not mistake a rendered demo button for implemented input.
 - Keep this file aligned with agreed decisions as implementation develops.

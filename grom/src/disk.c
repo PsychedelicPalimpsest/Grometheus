@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include "monocypher.h"
 
+static const char GROM_MAGIC[9] = "GromCrypt";
 
 static int parse_int(const char* str, size_t strc) {
     int value = 0;

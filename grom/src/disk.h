@@ -13,9 +13,6 @@
 int grom_create_userdata();
 
 
-// 14 byte magic value for grom paritioned disks (including sd cards)
-const char GROM_MAGIC[9] = "GromCrypt";
-
 enum grom_slot_flags {
   GS_SPLIT = 1,            // Split between an external storage (sd card) and internel storage
   GS_USERDATA = 2,         // The userdata portion of a split slot. 

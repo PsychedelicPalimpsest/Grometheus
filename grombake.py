@@ -24,7 +24,7 @@ from scripts import debug_adb, driver_bundle, image_builder, romdump
 ROOT = Path(__file__).resolve().parent
 MAGISK = ROOT / "vendor/magisk"
 BUILD_SCRIPT = ROOT / "scripts/build-init.sh"
-TEST_BUILD = ROOT / "out/gromui-tests"
+TEST_BUILD = ROOT / "out/host-tests"
 OUTPUT = ROOT / "out/grom-init"
 ARCHES = {"x86_64": 62, "arm64-v8a": 183}
 STEPS = (
@@ -33,7 +33,7 @@ STEPS = (
     "Install the pinned ONDK if missing",
     "Validate any selected driver profile against supplied modules and target kernel",
     "Build pinned magiskboot and the combined static init for the target ABI",
-    "Run builder checks and static gromui host tests",
+    "Run the host test suite",
     "Patch and reopen the image; check static ELF, stock init, drivers, and hashes",
 )
 
@@ -273,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="do not download ONDK or Cargo dependencies")
     parser.add_argument("--release", action="store_true", help="use Magisk's release build")
     parser.add_argument("--skip-tests", action="store_true",
-                        help="skip the static gromui host test suite")
+                        help="skip the host test suite")
     parser.add_argument("--jobs", type=int, default=min(os.cpu_count() or 1, 4),
                         help="parallel host test build jobs (default: up to 4)")
     parser.add_argument("--list-steps", action="store_true", help="show the pipeline and exit")
@@ -376,12 +376,9 @@ def main(argv: list[str] | None = None) -> int:
             (OUTPUT / "build.json").unlink(missing_ok=True)
             run(["bash", str(BUILD_SCRIPT)], env=env)
             if not args.skip_tests:
-                say("running builder checks")
-                run([sys.executable, "-m", "unittest", "discover", "-s", "tests",
-                     "-p", "test_grombake.py"])
-                say("building and running static gromui host tests")
-                run(["cmake", "-S", str(ROOT / "gromui"), "-B", str(TEST_BUILD),
-                     "-DGROMUI_LVGL=ON", "-DBUILD_TESTING=ON",
+                say("building and running the host test suite")
+                run(["cmake", "-S", str(ROOT), "-B", str(TEST_BUILD),
+                     "-DBUILD_TESTING=ON", f"-DPython3_EXECUTABLE={sys.executable}",
                      "-DCMAKE_BUILD_TYPE=MinSizeRel"])
                 run(["cmake", "--build", str(TEST_BUILD), "--parallel", str(args.jobs)])
                 run(["ctest", "--test-dir", str(TEST_BUILD), "--output-on-failure"])

@@ -14,9 +14,10 @@ Fork changes:
    `/sys` setup, then passes a read-only snapshot to `grom_preboot_run()` before
    Magisk's first-stage path. It bypasses the hook for the `selinux_setup`
    second-stage re-entry.
-2. `native/src/Android.mk` builds `grom/`, the `gromui/` display backend, its
-   LVGL adapter and pinned LVGL source as static libraries linked into the
-   existing `magiskinit` executable. No wrapper executable is used.
+2. `native/src/Android.mk` builds static libraries for `grom/`, the vendored
+   Monocypher sources, the `gromui/` display backend, its LVGL adapter, and the
+   pinned LVGL source. `libgrom` depends on `libmonocypher`, and the combined
+   `magiskinit` links them statically.
 
 The current `grom_preboot_run()` starts a supervised LVGL display test and
 intentionally cannot return success. A renderer failure leaves PID 1 in

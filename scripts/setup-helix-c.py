@@ -27,10 +27,8 @@ def main() -> None:
         if shutil.which(tool) is None:
             raise SystemExit(f"Missing required tool: {tool}")
 
-    commands = configure(
-        ROOT / "gromui", OUT / "helix-gromui",
-        ["-DGROMUI_LVGL=ON", "-DBUILD_TESTING=ON"],
-    )
+    host_build = OUT / "helix-host"
+    commands = configure(ROOT, host_build, ["-DBUILD_TESTING=ON"])
     commands += configure(ROOT / "gromui/design", OUT / "helix-design", [])
 
     # Keep only checked-in project C files. The extracted LVGL sources are
@@ -48,7 +46,7 @@ def main() -> None:
     # by a host CMake target. Mirror its C include paths for editing only.
     includes = [
         ROOT / "grom/include", ROOT / "grom/src", ROOT / "grom/ui",
-        ROOT / "gromui/include", OUT / "helix-gromui/vendor/lvgl",
+        ROOT / "gromui/include", host_build / "gromui/vendor/lvgl",
     ]
     for source in sorted((ROOT / "grom/src").glob("*.c")):
         result.setdefault(str(source), {

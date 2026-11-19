@@ -29,6 +29,9 @@ Use `add_subdirectory(gromui)` and link
 `gromui`, or `gromui-lvgl` for the adapter. LVGL configuration lives in
 `include/lv_conf.h`; external codecs and platform drivers are disabled.
 
+For the full host test suite, including preboot and frontend tests, follow the
+[project-root workflow](../README.md#run-the-host-tests).
+
 ARM64 static build:
 
 ```sh
@@ -133,11 +136,9 @@ See [the backend call map](../docs/backend-ui-flows.md) for each flow.
 Build the native runner with `cmake -S design -B build-design -G Ninja`, then
 `cmake --build build-design` and run `build-design/grom-design`. Pass a width and
 height, for example `build-design/grom-design 1080 2400`, to preview scaling.
-SDL2 development files are required. Run
-`ctest --test-dir build-design --output-on-failure`
-for the frontend interaction test. Its deterministic backend functions exist
-only in that test executable. The runner is a test host for the frontend, not
-grom logic.
+SDL2 development files are required for the preview. The root CTest suite
+runs the `grom-interaction` test headlessly with the preboot LVGL configuration
+and a deterministic test backend.
 
 Keep exclusive ownership of the display while open. On close, gromui restores
 the previous DRM CRTC routing/mode or saved visible fbdev pixels and frees its

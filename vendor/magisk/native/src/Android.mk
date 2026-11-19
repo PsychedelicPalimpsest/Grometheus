@@ -56,6 +56,7 @@ $(error GROM_LVGL_DIR is required for the combined init build)
 endif
 
 GROM_LVGL_SOURCES := $(shell find $(GROM_LVGL_DIR)/src -name '*.c' -print)
+GROM_MONOCYPHER_DIR := $(GROM_PROJECT_ROOT)/vendor/monocypher/src
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := liblvgl
@@ -87,7 +88,18 @@ LOCAL_CFLAGS := -std=c11 -DLV_CONF_INCLUDE_SIMPLE
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
+LOCAL_MODULE := libmonocypher
+LOCAL_SRC_FILES := \
+    $(GROM_MONOCYPHER_DIR)/monocypher.c \
+    $(GROM_MONOCYPHER_DIR)/optional/monocypher-ed25519.c
+LOCAL_C_INCLUDES := $(GROM_MONOCYPHER_DIR)
+LOCAL_EXPORT_C_INCLUDES := $(GROM_MONOCYPHER_DIR)
+LOCAL_CFLAGS := -std=c11
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
 LOCAL_MODULE := libgrom
+LOCAL_STATIC_LIBRARIES := libmonocypher
 LOCAL_SRC_FILES := \
     $(GROM_PROJECT_ROOT)/grom/src/preboot.c \
     $(GROM_PROJECT_ROOT)/grom/src/driver_bundle.c \

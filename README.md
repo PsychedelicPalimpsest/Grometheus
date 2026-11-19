@@ -34,11 +34,30 @@ Run `python3 scripts/setup-helix-c.py` from the project root, then open a C
 file with `helix grom/src/preboot.c` (or `hx` if that is the command on your
 machine). The script needs CMake, Ninja, clang and clangd, plus SDL2 development
 files for the design runner. It generates an ignored root `compile_commands.json`
-from the gromui and design CMake targets, with host editing commands for the
+from the host and design CMake targets, with host editing commands for the
 remaining combined-init C files. Rerun it when CMake targets or compile flags
 change. Helix uses the project `.helix/languages.toml` to start clangd for C.
 The generated commands support editor diagnostics and navigation; they do not
 replace the Android cross build or verify device behavior.
+
+## Run the host tests
+
+Run these commands from the project root with CMake, a Linux C toolchain, and
+Python 3.10 or newer.
+
+```sh
+cmake -S . -B out/host-tests -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_TESTING=ON
+cmake --build out/host-tests --parallel 4
+ctest --test-dir out/host-tests --output-on-failure
+```
+
+The suite includes the Python builder and ROM-dump checks in `tests/`, the
+display library checks in `gromui/tests/`, and the preboot and headless LVGL
+frontend checks in `grom/tests/`.
+Use `ctest --test-dir out/host-tests -R disk -V` to run the disk checks.
+They use synthetic device metadata and a temporary image. CTest reports
+`disk-format` as skipped while the formatter exits early after hashing. The
+test checks the header write if formatting succeeds.
 
 ## Build or patch an image
 
@@ -54,7 +73,7 @@ The builder prefers an SDK with Magisk's pinned ONDK r29.2 already installed,
 even if `ANDROID_HOME` points elsewhere. If ONDK is missing, it invokes the
 vendored Magisk installer to download it. It builds x86_64 for the Android SDK
 emulator and arm64-v8a for the Moto G Fast development target, then runs the
-gromui tests and writes `out/grom-init/build.json` with hashes and static ELF
+host suite and writes `out/grom-init/build.json` with hashes and static ELF
 checks. Given an image or directory, it detects x86_64 or arm64-v8a from the
 kernel and ramdisk init, builds that ABI, saves the original init as
 `/init.orig`, and writes a patched copy under `out/grom-images/` with a JSON
